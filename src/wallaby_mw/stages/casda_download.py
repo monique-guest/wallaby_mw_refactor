@@ -2,25 +2,45 @@
 from astroquery.utils.tap.core import TapPlus
 from astroquery.casda import Casda
 from urllib.parse import urlparse
+from astropy.utils.exceptions import AstropyWarning
 import time 
 import logging 
 import socket 
 import os
 import hashlib
+import argparse
+import sys
+import warnings
 
-logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("astroquery").setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("astroquery").setLevel(logging.WARNING)
 
 socket.setdefaulttimeout(30)
 
-casda = Casda()
-
-# Credentials (moved to env vars / CLI later)
-username = "monique.guest@csiro.au"
-
-casda.login(username=username)
+# Silence VOTable unit warnings from CASDA datalink ("pixel" unit)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*Invalid unit string 'pixel'.*",
+    category=AstropyWarning,
+)
 
 CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
+
+class AuthFailureHandler(logging.Handler):
+    def __init__(self):
+        super().__init__(level=logging.ERROR)
+        self.failed = False
+        self.msg = None
+
+    def emit(self, record):
+        msg = record.getMessage()
+        if "Authentication failed" in msg:
+            self.failed = True
+            self.msg = msg
+
+auth_handler = AuthFailureHandler()
+logging.getLogger().addHandler(auth_handler)
+# logging.getLogger("astroquery.casda.core").setLevel(logging.INFO)
 
 def file_exists(filepath):
     return os.path.exists(filepath) and os.path.getsize(filepath) > 0 
@@ -41,30 +61,55 @@ def read_checksum_file(checksum_path):
         return f.read().split()[0].strip()
 
 def main():
-    sbid = 66866 
-    filename_like = "image.restored.i.SB66866%.cube.MilkyWay%.fits" 
-    rootdir = f"C:/Users/gue034/Code/Work/sandpit/data"
-    outdir = f"{rootdir}/{sbid}"
 
-    # Create directory
-    os.makedirs(outdir, exist_ok=True)
-    os.makedirs(os.path.join(outdir, "casda"), exist_ok=True)
+    # Create argument parser
+    parser = argparse.ArgumentParser(
+        description="Download WALLABY Milky Way data from CASDA"
+    )
 
-    # Assign query to extract download URLs
-    # adql = f"""
-    # SELECT TOP 50
-    #     obs_id, filename, access_url, access_format
-    # FROM ivoa.obscore
-    # WHERE obs_id = '{sbid}'
-    #     AND dataproduct_type = 'cube'
-    #     AND filename LIKE '{filename_like}'
-    # """
+    parser.add_argument(
+        "--sbids", 
+        type=int, 
+        nargs="+", 
+        required=True, 
+        help="One or more SBIDS (e.g. 66866 67022)"
+    )
+    parser.add_argument(
+        "--rootdir",
+        type=str, 
+        required=True, 
+        help="Root directory for pipeline outputs"
+    ) 
 
+    args = parser.parse_args()
+
+    sbids = args.sbids
+    rootdir = args.rootdir 
+
+    # CASDA auth 
+    username = "monique.guest@csiro.au" # move to env/CLI 
+    casda = Casda()
+
+    casda.login(username=username)
+
+    if auth_handler.failed:
+        logging.error("CASDA login failed (detected from logs): %s", auth_handler.msg)
+        sys.exit(1)
+
+    logging.info("CASDA login OK for %s", username)
+
+    # Start CASDA download process 
+
+    # Create query to extract download URLs
+    obs_ids = ",".join(f"'ASKAP-{s}'" for s in sbids)
     adql = f"""
-    SELECT TOP 10 obs_id, dataproduct_type, filename, access_format, access_url
+    SELECT obs_id, dataproduct_type, filename, access_format, access_url
     FROM ivoa.obscore
-    WHERE obs_id = 'ASKAP-{sbid}' 
-        AND filename = 'image.restored.i.SB{sbid}.cube.MilkyWay.contsub.fits'
+    WHERE obs_id IN ({obs_ids}) 
+        AND dataproduct_type = 'cube'
+        AND (
+            filename LIKE 'weights.i.%.cube.MilkyWay.fits' 
+            OR filename LIKE 'image.restored.i.%.cube.MilkyWay.contsub.fits')
     """
 
     print("ADQL query:\n", adql, flush=True)
@@ -108,49 +153,71 @@ def main():
         if len(table) > 0:
             logging.debug(table["obs_id", "dataproduct_type", "filename", "access_format", "access_url"][:10]) 
 
-        # Extract URLs for data to be downloaded
-        url_list = casda.stage_data(table, verbose=True)
-        logging.debug("Staged %d URLs:\n%s", len(url_list), "\n".join(url_list))
+        # Process one SBID at a time
+        for sbid in sbids:
+            obs_id = f"ASKAP-{sbid}"
+            logging.info(f"Processing SBID {sbid}")
 
-        # Check if files from URLs already exist before downloading 
-        urls_to_download = []
+            sbid_dir = os.path.join(rootdir, str(sbid))
+            casda_dir = os.path.join(sbid_dir, "casda")
+            os.makedirs(sbid_dir, exist_ok=True)
+            os.makedirs(casda_dir, exist_ok=True)
 
-        for url in url_list:
-            filename = filename_from_url(url)
-            local_path = os.path.join(outdir, filename) 
+            # Filter the mixed TAP results table down to just this SBID
+            sbid_table = table[table["obs_id"] == obs_id]
 
-            if file_exists(local_path):
-                logging.info(f"File already exists, skipping: {filename}")
+            if len(sbid_table) == 0:
+                logging.warning("No rows returned for %s (skipping)", obs_id)
                 continue
 
-            urls_to_download.append(url)
+            # Stage URLs only for this SBID
+            # url_list = casda.stage_data(sbid_table, verbose=True)
+            try:
+                url_list = casda.stage_data(sbid_table, verbose=True)
+            except Exception as e:
+                logging.error("CASDA stage_data failed for %s (auth/permissions?): %s", obs_id, e)
+                sys.exit(1)
 
-        # Download the required files
-        if urls_to_download:
-            files = casda.download_files(urls_to_download, savedir=outdir)
-            logging.info("Downloaded files:\n", files) 
+            logging.debug("Staged %d URLs for %s:\n%s", len(url_list), obs_id, "\n".join(url_list))
 
-        # Checksum verification
-        for file in os.listdir(outdir):
-            if not file.endswith(".fits"):
-                continue 
+            # Check if files from URLs already exist before downloading 
+            urls_to_download = []
 
-            data_path = os.path.join(outdir, file)
-            checksum_path = data_path + ".checksum"
+            for url in url_list:
+                filename = filename_from_url(url)
+                local_path = os.path.join(casda_dir, filename) 
 
-            if not os.path.exists(checksum_path):
-                logging.warning(f"No checkseum file found for {file}")
-                continue 
+                if file_exists(local_path):
+                    logging.info(f"File already exists, skipping: {filename}")
+                else:
+                    urls_to_download.append(url)
 
-            expected = read_checksum_file(checksum_path)
-            actual = md5sum(data_path)
+            # Download the required files
+            if urls_to_download:
+                files = casda.download_files(urls_to_download, savedir=casda_dir)
+                logging.info("Downloaded %d files", len(files))
 
-            if actual != expected:
-                raise RuntimeError(
-                    f"Checksum mismatch for {file}: expected {expected}, got {actual}"
-                )
+            # Checksum verification
+            for file in os.listdir(casda_dir):
+                if not file.endswith(".fits"):
+                    continue 
 
-            logging.info(f"Checksum OK for file: {file}")
+                data_path = os.path.join(casda_dir, file)
+                checksum_path = data_path + ".checksum"
+
+                if not os.path.exists(checksum_path):
+                    logging.warning(f"No checksum file found for {file}")
+                    continue 
+
+                expected = read_checksum_file(checksum_path)
+                actual = md5sum(data_path)
+
+                if actual != expected:
+                    raise RuntimeError(
+                        f"Checksum mismatch for {file}: expected {expected}, got {actual}"
+                    )
+
+                logging.info(f"Checksum OK for file: {file}")
     else: 
         print("Job finished but not COMPLETED. Phase:", phase, flush=True)
         if phase == "ERROR":
