@@ -3,6 +3,10 @@ from astroquery.utils.tap.core import TapPlus
 from astroquery.casda import Casda
 from urllib.parse import urlparse
 from astropy.utils.exceptions import AstropyWarning
+from wallaby_mw.utils.auth import install_auth_failure_handler
+from wallaby_mw.utils.files import file_exists, filename_from_url
+from wallaby_mw.utils.checksums import md5sum, read_checksum_file
+from wallaby_mw.utils.errors import WallabyPipelineError, CasdaError, CasdaAuthError, CasdaStagingError, CasdaTapJobError
 import time 
 import logging 
 import socket 
@@ -24,43 +28,8 @@ warnings.filterwarnings(
     category=AstropyWarning,
 )
 
-CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
-
-class AuthFailureHandler(logging.Handler):
-    def __init__(self):
-        super().__init__(level=logging.ERROR)
-        self.failed = False
-        self.msg = None
-
-    def emit(self, record):
-        msg = record.getMessage()
-        if "Authentication failed" in msg:
-            self.failed = True
-            self.msg = msg
-
-auth_handler = AuthFailureHandler()
-logging.getLogger().addHandler(auth_handler)
-# logging.getLogger("astroquery.casda.core").setLevel(logging.INFO)
-
-def file_exists(filepath):
-    return os.path.exists(filepath) and os.path.getsize(filepath) > 0 
-
-def filename_from_url(url):
-    return os.path.basename(urlparse(url).path) 
-
-def md5sum(path):
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda:f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-def read_checksum_file(checksum_path):
-    # Expects "<md5> <filename>"
-    with open(checksum_path, "r") as f:
-        return f.read().split()[0].strip()
-
-def main():
+# Function to parse arguments 
+def parse_args(argv=None):
 
     # Create argument parser
     parser = argparse.ArgumentParser(
@@ -81,10 +50,23 @@ def main():
         help="Root directory for pipeline outputs"
     ) 
 
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
-    sbids = args.sbids
-    rootdir = args.rootdir 
+def run(sbids, rootdir):
+    """
+    Run the CASDA download stage for one or more SBIDs.
+
+    All real work lives here so this can be called from:
+      - CLI (main)
+      - Prefect tasks
+      - tests
+    """
+    # Install the auth failure handler and attach it to the root logger
+    auth_handler = install_auth_failure_handler()
+    logging.getLogger().addHandler(auth_handler) 
+
+    # Assign TAP URL
+    CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
 
     # CASDA auth 
     username = "monique.guest@csiro.au" # move to env/CLI 
@@ -93,8 +75,7 @@ def main():
     casda.login(username=username)
 
     if auth_handler.failed:
-        logging.error("CASDA login failed (detected from logs): %s", auth_handler.msg)
-        sys.exit(1)
+        raise CasdaAuthError(f"CASDA login failed (detected from logs): {auth_handler.msg}")
 
     logging.info("CASDA login OK for %s", username)
 
@@ -142,8 +123,7 @@ def main():
         if phase in ("COMPLETED", "ERROR", "ABORTED"):
             executing = False
         if elapsed >= timeout_s:
-            logging.warning(f"Timed out after {timeout_s}s; last phase={phase}", flush=True)
-            return
+            raise CasdaTapJobError(f"TAP job timed out after {timeout_s}s; last phase={phase}")
 
     if phase == "COMPLETED":
         print("Final phase:", phase, flush=True)
@@ -175,8 +155,9 @@ def main():
             try:
                 url_list = casda.stage_data(sbid_table, verbose=True)
             except Exception as e:
-                logging.error("CASDA stage_data failed for %s (auth/permissions?): %s", obs_id, e)
-                sys.exit(1)
+                raise CasdaStagingError(
+                    f"CASDA stage_data failed for {obs_id} (auth/permissions?): {e}"
+                ) from e
 
             logging.debug("Staged %d URLs for %s:\n%s", len(url_list), obs_id, "\n".join(url_list))
 
@@ -213,18 +194,28 @@ def main():
                 actual = md5sum(data_path)
 
                 if actual != expected:
-                    raise RuntimeError(
+                    raise CasdaError(
                         f"Checksum mismatch for {file}: expected {expected}, got {actual}"
                     )
 
                 logging.info(f"Checksum OK for file: {file}")
     else: 
-        print("Job finished but not COMPLETED. Phase:", phase, flush=True)
+        msg = f"TAP job finished but not COMPLETED (phase={phase})"
         if phase == "ERROR":
             try:
-                print("Error:", job.get_error(), flush=True)
+                msg += f"; error={job.get_error()}"
             except Exception as e:
-                print("Could not fetch error:", e, flush=True)
+                msg += f"; (could not fetch job error: {e})"
+        raise CasdaTapJobError(msg)
+
+def main():
+
+    args = parse_args()
+    try:
+        run(sbids=args.sbids, rootdir=args.rootdir)
+    except WallabyPipelineError as e:
+        logging.error(str(e))
+        raise SystemExit(1) from e
 
 if __name__ == "__main__":
     main()
