@@ -1,0 +1,28 @@
+import sys
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    if not argv or argv[0] in ("-h", "--help"):
+        print(
+            "wallaby_mw pipeline\n\n"
+            "Usage:\n"
+            "  python -m wallaby_mw <command> [args]\n\n"
+            "Commands:\n"
+            "  casda-download   Download WALLABY MW products from CASDA\n"
+        )
+        return 0
+
+    cmd = argv.pop(0)
+
+    if cmd in ("casda-download", "casda_download"):
+        from wallaby_mw.stages.casda_download import main as casda_main
+        casda_main(argv)
+        return 0
+
+    print(f"Unknown command: {cmd}\nUse --help for usage.")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

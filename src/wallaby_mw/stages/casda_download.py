@@ -69,7 +69,12 @@ def run(sbids, rootdir):
     CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
 
     # CASDA auth 
-    username = "monique.guest@csiro.au" # move to env/CLI 
+    username = os.environ.get("CASDA_USERNAME")
+    if not username:
+        raise CasdaAuthError(
+            "CASDA_USERNAME environment variable is not set. "
+            "Set it before running (required for Docker/HPC)."
+        )
     casda = Casda()
 
     casda.login(username=username)
@@ -208,9 +213,9 @@ def run(sbids, rootdir):
                 msg += f"; (could not fetch job error: {e})"
         raise CasdaTapJobError(msg)
 
-def main():
+def main(argv=None):
 
-    args = parse_args()
+    args = parse_args(argv)
     try:
         run(sbids=args.sbids, rootdir=args.rootdir)
     except WallabyPipelineError as e:
@@ -218,4 +223,5 @@ def main():
         raise SystemExit(1) from e
 
 if __name__ == "__main__":
+
     main()
