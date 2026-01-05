@@ -3,10 +3,18 @@ from astroquery.utils.tap.core import TapPlus
 from astroquery.casda import Casda
 from urllib.parse import urlparse
 from astropy.utils.exceptions import AstropyWarning
-from wallaby_mw.utils.auth import install_auth_failure_handler
+from datetime import datetime, timezone
+from wallaby_mw.utils.auth import (
+    install_auth_failure_handler,
+    setup_plaintext_keyring,
+    read_casda_credentials_ini,
+    ensure_casda_password_in_keyring,
+)
+from astropy.utils import iers
 from wallaby_mw.utils.files import file_exists, filename_from_url
 from wallaby_mw.utils.checksums import md5sum, read_checksum_file
 from wallaby_mw.utils.errors import WallabyPipelineError, CasdaError, CasdaAuthError, CasdaStagingError, CasdaTapJobError
+from wallaby_mw.utils.manifest import utc_now_iso, write_manifest
 import time 
 import logging 
 import socket 
@@ -15,6 +23,10 @@ import hashlib
 import argparse
 import sys
 import warnings
+import configparser
+import json
+
+iers.conf.auto_download = False
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("astroquery").setLevel(logging.WARNING)
@@ -40,19 +52,33 @@ def parse_args(argv=None):
         "--sbids", 
         type=int, 
         nargs="+", 
-        required=True, 
+        required=False, 
         help="One or more SBIDS (e.g. 66866 67022)"
     )
+
     parser.add_argument(
         "--rootdir",
         type=str, 
-        required=True, 
+        required=False, 
         help="Root directory for pipeline outputs"
     ) 
 
+    parser.add_argument(
+        "--credentials",
+        type=str,
+        required=True,
+        help="Path to CASDA credentials.ini file (contains [CASDA] username/password)"
+    )
+
+    parser.add_argument(
+        "--setup-keyring",
+        action="store_true",
+        help="Store the CASDA password from credentials.ini into the plaintext keyring, then exit"
+    )
+
     return parser.parse_args(argv)
 
-def run(sbids, rootdir):
+def run(sbids, rootdir, username):
     """
     Run the CASDA download stage for one or more SBIDs.
 
@@ -69,12 +95,6 @@ def run(sbids, rootdir):
     CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
 
     # CASDA auth 
-    username = os.environ.get("CASDA_USERNAME")
-    if not username:
-        raise CasdaAuthError(
-            "CASDA_USERNAME environment variable is not set. "
-            "Set it before running (required for Docker/HPC)."
-        )
     casda = Casda()
 
     casda.login(username=username)
@@ -147,9 +167,27 @@ def run(sbids, rootdir):
             casda_dir = os.path.join(sbid_dir, "casda")
             os.makedirs(sbid_dir, exist_ok=True)
             os.makedirs(casda_dir, exist_ok=True)
+            sbid_manifest_path = os.path.join(sbid_dir, "manifest.json")
+
+            stage_manifest = {
+                "stage": "casda_download",
+                "started_utc": utc_now_iso(),
+                "sbid": int(sbid),
+                "obs_id": obs_id,
+                "outputs": {
+                    "casda_dir": casda_dir,
+                },
+                "tap": {
+                    "url": CASDA_TAP_URL,
+                    "rows": None,
+                },
+                "files": [],
+                "checksums": [],
+            }
 
             # Filter the mixed TAP results table down to just this SBID
             sbid_table = table[table["obs_id"] == obs_id]
+            stage_manifest["tap"]["rows"] = int(len(sbid_table))
 
             if len(sbid_table) == 0:
                 logging.warning("No rows returned for %s (skipping)", obs_id)
@@ -175,13 +213,31 @@ def run(sbids, rootdir):
 
                 if file_exists(local_path):
                     logging.info(f"File already exists, skipping: {filename}")
+                    
+                    stage_manifest["files"].append({
+                        "filename": filename,
+                        "url": url,
+                        "path": local_path,
+                        "status": "skipped_exists",
+                    })
                 else:
                     urls_to_download.append(url)
+                    stage_manifest["files"].append({
+                        "filename": filename,
+                        "url": url,
+                        "path": local_path,
+                        "status": "scheduled_download",
+                    })
 
             # Download the required files
             if urls_to_download:
                 files = casda.download_files(urls_to_download, savedir=casda_dir)
                 logging.info("Downloaded %d files", len(files))
+
+                downloaded = {os.path.basename(str(p)) for p in files}
+                for f in stage_manifest["files"]:
+                    if f["status"] == "scheduled_download" and f["filename"] in downloaded:
+                        f["status"] = "downloaded"
 
             # Checksum verification
             for file in os.listdir(casda_dir):
@@ -193,17 +249,48 @@ def run(sbids, rootdir):
 
                 if not os.path.exists(checksum_path):
                     logging.warning(f"No checksum file found for {file}")
+                    stage_manifest["checksums"].append({
+                        "filename": file,
+                        "data_path": data_path,
+                        "checksum_path": checksum_path,
+                        "ok": None,
+                        "note": "missing_checksum_file",
+                    })
                     continue 
 
                 expected = read_checksum_file(checksum_path)
                 actual = md5sum(data_path)
 
-                if actual != expected:
+                ok = (actual == expected)
+
+                stage_manifest["checksums"].append({
+                    "filename": file,
+                    "data_path": data_path,
+                    "checksum_path": checksum_path,
+                    "expected_md5": expected,
+                    "actual_md5": actual,
+                    "ok": ok,
+                })
+
+                if not ok:
                     raise CasdaError(
                         f"Checksum mismatch for {file}: expected {expected}, got {actual}"
                     )
 
                 logging.info(f"Checksum OK for file: {file}")
+
+            sbid_manifest = {
+                "sbid": int(sbid),
+                "obs_id": obs_id,
+                "updated_utc": utc_now_iso(),
+                "stages": {
+                    "casda_download": stage_manifest
+                }
+            }
+
+            write_manifest(sbid_manifest_path, sbid_manifest)
+            logging.info("Wrote SBID manifest: %s", sbid_manifest_path)
+
     else: 
         msg = f"TAP job finished but not COMPLETED (phase={phase})"
         if phase == "ERROR":
@@ -216,8 +303,25 @@ def run(sbids, rootdir):
 def main(argv=None):
 
     args = parse_args(argv)
+
+    setup_plaintext_keyring()
+
+    # One time credentials setup mode
+    if args.setup_keyring:
+        username = ensure_casda_password_in_keyring(args.credentials)
+        print(f"Stored CASDA password in keyring for user '{username}'.")
+        raise SystemExit(0)
+
+    # Normal run mode requires these:
+    if not args.sbids:
+        raise SystemExit("--sbids is required unless --setup-keyring is set")
+    if not args.rootdir:
+        raise SystemExit("--rootdir is required unless --setup-keyring is set")
+
+    username, _ = read_casda_credentials_ini(args.credentials)
+
     try:
-        run(sbids=args.sbids, rootdir=args.rootdir)
+        run(sbids=args.sbids, rootdir=args.rootdir, username=username)
     except WallabyPipelineError as e:
         logging.error(str(e))
         raise SystemExit(1) from e
