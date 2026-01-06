@@ -11,7 +11,7 @@ from wallaby_mw.utils.auth import (
     ensure_casda_password_in_keyring,
 )
 from astropy.utils import iers
-from wallaby_mw.utils.files import file_exists, filename_from_url
+from wallaby_mw.utils.files import filename_from_url
 from wallaby_mw.utils.checksums import md5sum, read_checksum_file
 from wallaby_mw.utils.errors import WallabyPipelineError, CasdaError, CasdaAuthError, CasdaStagingError, CasdaTapJobError
 from wallaby_mw.utils.manifest import utc_now_iso, write_manifest
@@ -28,7 +28,7 @@ import json
 
 iers.conf.auto_download = False
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("astroquery").setLevel(logging.WARNING)
 
 socket.setdefaulttimeout(30)
@@ -194,7 +194,6 @@ def run(sbids, rootdir, username):
                 continue
 
             # Stage URLs only for this SBID
-            # url_list = casda.stage_data(sbid_table, verbose=True)
             try:
                 url_list = casda.stage_data(sbid_table, verbose=True)
             except Exception as e:
@@ -211,7 +210,7 @@ def run(sbids, rootdir, username):
                 filename = filename_from_url(url)
                 local_path = os.path.join(casda_dir, filename) 
 
-                if file_exists(local_path):
+                if os.path.exists(local_path):
                     logging.info(f"File already exists, skipping: {filename}")
                     
                     stage_manifest["files"].append({
@@ -231,16 +230,25 @@ def run(sbids, rootdir, username):
 
             # Download the required files
             if urls_to_download:
+                logging.info("Starting to download %d URLs for %s", len(urls_to_download), obs_id)
+                t_dl0 = time.time()
                 files = casda.download_files(urls_to_download, savedir=casda_dir)
-                logging.info("Downloaded %d files", len(files))
+                logging.info("Download finished for %s in %.1fs (%d returned)", obs_id, time.time() - t_dl0, len(files))
 
                 downloaded = {os.path.basename(str(p)) for p in files}
                 for f in stage_manifest["files"]:
                     if f["status"] == "scheduled_download" and f["filename"] in downloaded:
                         f["status"] = "downloaded"
 
+            # Check if expected files have been downloaded
+            expected_files = [filename_from_url(url) for url in url_list]
+            missing = [file for file in expected_files if not os.path.exists(os.path.join(casda_dir, file))]
+            if missing:
+                raise CasdaError(f"Download incomplete for {obs_id}; missing files: {missing}")
+
             # Checksum verification
-            for file in os.listdir(casda_dir):
+            expected_fits = [f for f in expected_files if f.endswith(".fits")]
+            for file in expected_fits:
                 if not file.endswith(".fits"):
                     continue 
 
