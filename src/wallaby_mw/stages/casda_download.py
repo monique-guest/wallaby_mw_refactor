@@ -70,15 +70,9 @@ def parse_args(argv=None):
         help="Path to CASDA credentials.ini file (contains [CASDA] username/password)"
     )
 
-    parser.add_argument(
-        "--setup-keyring",
-        action="store_true",
-        help="Store the CASDA password from credentials.ini into the plaintext keyring, then exit"
-    )
-
     return parser.parse_args(argv)
 
-def run(sbids, rootdir, username):
+def run(sbids, rootdir, credentials):
     """
     Run the CASDA download stage for one or more SBIDs.
 
@@ -90,6 +84,13 @@ def run(sbids, rootdir, username):
     # Install the auth failure handler and attach it to the root logger
     auth_handler = install_auth_failure_handler()
     logging.getLogger().addHandler(auth_handler) 
+
+    # Setup plaintext keyring
+    setup_plaintext_keyring() 
+
+    # Seed keyring from credentials.ini
+    username = ensure_casda_password_in_keyring(credentials)
+    logging.info("Loaded CASDA credentials for %s from %s", username, credentials)
 
     # Assign TAP URL
     CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
@@ -312,24 +313,26 @@ def main(argv=None):
 
     args = parse_args(argv)
 
-    setup_plaintext_keyring()
+    # setup_plaintext_keyring()
 
-    # One time credentials setup mode
-    if args.setup_keyring:
-        username = ensure_casda_password_in_keyring(args.credentials)
-        print(f"Stored CASDA password in keyring for user '{username}'.")
-        raise SystemExit(0)
+    # # One time credentials setup mode
+    # if args.setup_keyring:
+    #     username = ensure_casda_password_in_keyring(args.credentials)
+    #     print(f"Stored CASDA password in keyring for user '{username}'.")
+    #     raise SystemExit(0)
 
     # Normal run mode requires these:
     if not args.sbids:
-        raise SystemExit("--sbids is required unless --setup-keyring is set")
+        raise SystemExit("--sbids is required")
     if not args.rootdir:
-        raise SystemExit("--rootdir is required unless --setup-keyring is set")
+        raise SystemExit("--rootdir is required")
+    if not args.credentials:
+        raise SystemExit("--credentials is required")
 
-    username, _ = read_casda_credentials_ini(args.credentials)
+    # username, _ = read_casda_credentials_ini(args.credentials)
 
     try:
-        run(sbids=args.sbids, rootdir=args.rootdir, username=username)
+        run(sbids=args.sbids, rootdir=args.rootdir, credentials=args.credentials)
     except WallabyPipelineError as e:
         logging.error(str(e))
         raise SystemExit(1) from e

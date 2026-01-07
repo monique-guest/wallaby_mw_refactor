@@ -7,6 +7,13 @@ name = "wallaby-mw"
 version = "0.1.0"
 description = "WALLABY Milky Way pipeline"
 
+dependencies = [
+  "astroquery",
+  "astropy",
+  "keyring",
+  "keyrings.alt",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
