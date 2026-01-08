@@ -79,3 +79,37 @@ def ensure_casda_password_in_keyring(credentials_ini_path: str, *, service: str 
         raise ValueError("credentials.ini must contain [CASDA] password to setup keyring")
     store_casda_password_in_keyring(username, password, service=service)
     return username
+
+def login_casda(
+    username: str | None = None,
+    password: str | None = None,
+):
+    """
+    Log into CASDA and return (casda_instance, username).
+
+    If username/password are not provided, they are taken from
+    CASDA_USERNAME and CASDA_PASSWORD environment variables.
+
+    If a password is provided, it is stored in the plaintext keyring.
+    """
+    from astroquery.casda import Casda  # local import
+
+    # Prefer explicit args, fall back to env
+    if username is None:
+        username = os.environ.get("CASDA_USERNAME")
+
+    if password is None:
+        password = os.environ.get("CASDA_PASSWORD")
+
+    if not username:
+        raise RuntimeError("CASDA username not provided and CASDA_USERNAME not set")
+
+    if password:
+        store_casda_password_in_keyring(username, password)
+        # Drop it from env if it came from there
+        if os.environ.get("CASDA_PASSWORD") == password:
+            os.environ.pop("CASDA_PASSWORD", None)
+
+    casda = Casda()
+    casda.login(username=username)
+    return casda, username

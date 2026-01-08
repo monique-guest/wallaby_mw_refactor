@@ -9,6 +9,7 @@ from wallaby_mw.utils.auth import (
     setup_plaintext_keyring,
     read_casda_credentials_ini,
     ensure_casda_password_in_keyring,
+    login_casda,
 )
 from astropy.utils import iers
 from wallaby_mw.utils.files import filename_from_url
@@ -63,16 +64,9 @@ def parse_args(argv=None):
         help="Root directory for pipeline outputs"
     ) 
 
-    parser.add_argument(
-        "--credentials",
-        type=str,
-        required=True,
-        help="Path to CASDA credentials.ini file (contains [CASDA] username/password)"
-    )
-
     return parser.parse_args(argv)
 
-def run(sbids, rootdir, credentials):
+def run(sbids, rootdir):
     """
     Run the CASDA download stage for one or more SBIDs.
 
@@ -85,25 +79,17 @@ def run(sbids, rootdir, credentials):
     auth_handler = install_auth_failure_handler()
     logging.getLogger().addHandler(auth_handler) 
 
-    # Setup plaintext keyring
-    setup_plaintext_keyring() 
-
-    # Seed keyring from credentials.ini
-    username = ensure_casda_password_in_keyring(credentials)
-    logging.info("Loaded CASDA credentials for %s from %s", username, credentials)
-
-    # Assign TAP URL
-    CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
-
-    # CASDA auth 
-    casda = Casda()
-
-    casda.login(username=username)
+    # 🔐 CASDA auth (env or explicit, but stage doesn't care which)
+    casda, username = login_casda()
+    logging.info("CASDA login attempt for %s", username)
 
     if auth_handler.failed:
         raise CasdaAuthError(f"CASDA login failed (detected from logs): {auth_handler.msg}")
 
     logging.info("CASDA login OK for %s", username)
+
+    # Assign TAP URL
+    CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
 
     # Start CASDA download process 
 
@@ -313,26 +299,14 @@ def main(argv=None):
 
     args = parse_args(argv)
 
-    # setup_plaintext_keyring()
-
-    # # One time credentials setup mode
-    # if args.setup_keyring:
-    #     username = ensure_casda_password_in_keyring(args.credentials)
-    #     print(f"Stored CASDA password in keyring for user '{username}'.")
-    #     raise SystemExit(0)
-
     # Normal run mode requires these:
     if not args.sbids:
         raise SystemExit("--sbids is required")
     if not args.rootdir:
         raise SystemExit("--rootdir is required")
-    if not args.credentials:
-        raise SystemExit("--credentials is required")
-
-    # username, _ = read_casda_credentials_ini(args.credentials)
 
     try:
-        run(sbids=args.sbids, rootdir=args.rootdir, credentials=args.credentials)
+        run(sbids=args.sbids, rootdir=args.rootdir)
     except WallabyPipelineError as e:
         logging.error(str(e))
         raise SystemExit(1) from e
