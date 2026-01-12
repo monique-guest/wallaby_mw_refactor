@@ -12,6 +12,7 @@ dependencies = [
   "astropy",
   "keyring",
   "keyrings.alt",
+  "prefect>=2.20",
 ]
 
 [tool.setuptools]

@@ -79,7 +79,7 @@ def run(sbids, rootdir):
     auth_handler = install_auth_failure_handler()
     logging.getLogger().addHandler(auth_handler) 
 
-    # 🔐 CASDA auth (env or explicit, but stage doesn't care which)
+    # CASDA auth (env or explicit, but stage doesn't care which)
     casda, username = login_casda()
     logging.info("CASDA login attempt for %s", username)
 
