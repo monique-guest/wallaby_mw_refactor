@@ -47,28 +47,34 @@ def _setup(config_path: str):
     export_env_from_creds(creds=creds)
     return config
 
-# Function to run the CASDA download step
-def _run_casda(
-    pipeline_cfg: configparser.ConfigParser
-) -> str:
+# Generic function for submitting prefect tasks
+def _submit_task(
+    pipeline_cfg: configparser.ConfigParser,
+    section: str,
+    env: dict[str, str] | None = None,
+    ) -> str:
+    """
+    Generic function to submit CANFAR as Prefect tasks. 
 
+    Parameters
+    ----------
+    pipeline_cfg (ConfigParser):
+    section (str): The name of the section in config.ini, e.g. "casda", "hi4pi"
+    env (dict): 
+    """
     rootdir = pipeline_cfg["pipeline"]["rootdir"]
     sbids = pipeline_cfg["pipeline"]["sbids"]
-    stage = pipeline_cfg["casda"]
+    stage = pipeline_cfg[section]
 
     image = stage["image"]
-    cmd = "python"
-    args = (
-            "-m wallaby_mw casda-download "
-            f"--sbids {sbids} "
-            f"--rootdir {rootdir}"
-        )
+    cmd = stage.get("cmd", "python")
+    args = stage["args"].format(sbids=sbids, rootdir=rootdir)
     cores = stage.getint("cores", 2)
     ram = stage.getint("ram", 8)
 
-    session = start_session()
+    name = f"{section}-{sbids.replace(' ', '-')}"
 
-    name = f"casda-{sbids.replace(' ', '-')}"
+    session = start_session()
 
     session_id = submit_job(
         session=session,
@@ -78,17 +84,24 @@ def _run_casda(
         args=args,
         cores=cores,
         ram=ram,
-        env={
-            "CASDA_USERNAME": os.environ["CASDA_USERNAME"],
-            "CASDA_PASSWORD": os.environ["CASDA_PASSWORD"],
-        },
+        env=env
     )
 
-    print("Launched CASDA session:", session_id)
+    print(f"Launched session for [{section}]", session_id)
     final_status = live_logs(session=session, session_id=session_id)
-    print(f"CASDA stage finished with final status: {final_status}")
+    print(f"[{section}] step finished with final status: {final_status}")
 
     return session_id
+
+def _run_casda(
+    pipeline_cfg: configparser.ConfigParser
+    ) -> str:
+    env = {
+        "CASDA_USERNAME": os.environ["CASDA_USERNAME"],
+        "CASDA_PASSWORD": os.environ["CASDA_PASSWORD"],
+        } 
+    casda_session = _submit_task(pipeline_cfg=pipeline_cfg, section="casda", env=env)
+    return casda_session
 
 @task(name="casda")
 def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
