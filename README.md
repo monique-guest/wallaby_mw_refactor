@@ -30,7 +30,7 @@ The pipeline is intended to be run on CANFAR, but the ability to runs scripts an
 
 *   **CASDA Download** 
 
-## 🚀 Getting Started
+## 🚀 Running the Pipeline on CANFAR
 
 ### 1. Clone the repository
 
@@ -38,22 +38,33 @@ The pipeline is intended to be run on CANFAR, but the ability to runs scripts an
 git clone https://github.com/monique-guest/wallaby_mw_refactor.git
 cd wallaby_mw_refactor
 ```
+### 2. Create a Python virtual environment
 
-### 2. Install the package (editable mode)
+```bash
+python -m venv .venv
+```
+Then activate the virtual environment.
 
-Ensure you're using Python 3.10+.
+```bash
+source .venv/bin/activate
+```
+
+### 3. Install the package (editable mode)
+
+Ensure you're using Python 3.10+ and your virtual environment is activated.
 
 ```python
 python -m pip install -e .
 ```
 
-### 3. Install Prefect (if needed)
+### 4. Install Prefect (if needed)
 
 ```bash
 pip install prefect
 ```
+**<span style="color:red;">INSERT PREFECT SERVER INFO</span>**
 
-### 4. Create the `credentials.ini` file
+### 5. Create the `credentials.ini` file
 
 The pipeline uses `configs/credentials.ini` to read and inject the credentials for CASDA, Harbor and CANFAR 
 to environment variables and pass them to pipeline stages as needed. This allows the authentication and use 
@@ -74,7 +85,7 @@ secret = secret
 cadc_cert = path\to\.ssl\cadcproxy.pem 
 ```
 
-### 5. Create the `config.ini` file 
+### 6. Create the `config.ini` file 
 
 The pipeline uses `configs/config.ini` to determine pipeline settings and feed the necessary parameters
 to each stage. 
@@ -95,4 +106,77 @@ cores = 2
 ram = 8
 ```
 
-The only parameters that should require updating are those in the `[pipeline]` section.
+The only parameters that should require updating are those in the `[pipeline]` section. The pipeline 
+checks if **<span style="color:red;">INSERT FILES</span>** already exist, and if they do it skips 
+downloading them. If you want files to be re-downloaded, move or delete them in CANFAR.
+
+<details>
+  <summary>Parameter Descriptions</summary>
+    | Parameter | Description | Section/s |
+    |---|---|---|
+    | credentials |   | `pipeline` |
+    | sbids |   | `pipeline` |
+    | rootdir |   | `pipeline` |
+    | image |   |   |
+    | cmd |   |   |
+    | args |   |   |
+    | cores |   |   |
+    | ram |   |   |
+</details>
+
+### 7. Run the pipeline
+
+Use the following command to run the pipeline. The only input parameter required is the path to 
+your `config.ini` file.
+
+```bash
+python -m flows.wallaby_mw --config path/to/config.ini
+```
+
+This will:
+
+1.  Load configs
+    
+2.  Load credentials
+    
+3.  Export env variables for CASDA/Skaha auth
+    
+4.  Submit the CASDA stage to Skaha
+    
+5.  Stream live logs in your terminal
+    
+6.  Display flow + task execution in the Prefect UI
+
+## 🧠 Directory Structure
+
+```graphql
+wallaby_mw_refactor/
+│
+├── configs/                # Pipeline + credentials config
+│   ├── config.ini
+│   ├── credentials.ini
+│   └── example.ini
+│
+├── containers/
+│   └── casda_download/     # Dockerfile for CASDA stage container
+│
+├── flows/                  # Prefect orchestration layer
+│   ├── __init__.py
+│   └── wallaby_mw.py
+│
+├── src/                    # Main Python package
+│   └── wallaby_mw/
+│       ├── stages/         # Individual processing stages
+│       ├── utils/          # Shared helper modules
+│       ├── __init__.py
+│       └── __main__.py
+│
+├── prefect.yaml            # Prefect configuration
+├── pyproject.toml          # Package metadata and dependencies
+└── README.md               # This file
+```
+
+## 🚀 Testing the Pipeline Locally
+
+**<span style="color:red;">INSERT INSTRUCTIONS</span>**
+
