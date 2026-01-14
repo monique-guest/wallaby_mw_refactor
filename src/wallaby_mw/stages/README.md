@@ -16,9 +16,7 @@ Each stage is implemented as a standalone Python module and is designed to:
 
 ## Stages
 
-### casda_download.py
-  
-#### Overview
+### `casda_download.py`
 
 The first stage of the pipeline:
 
