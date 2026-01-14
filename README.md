@@ -62,7 +62,7 @@ python -m pip install -e .
 ```bash
 pip install prefect
 ```
-**<p style="color:red;">INSERT PREFECT SERVER INFO</p>**
+**<font color="red">INSERT PREFECT SERVER INFO</font>**
 
 ### 5. Create the `credentials.ini` file
 
@@ -107,21 +107,21 @@ ram = 8
 ```
 
 The only parameters that should require updating are those in the `[pipeline]` section. The pipeline 
-checks if **<p style="color:red;">INSERT FILES</p>** already exist, and if they do it skips 
+checks if **<font color="red">INSERT FILES</font>** already exist, and if they do it skips 
 downloading them. If you want files to be re-downloaded, move or delete them in CANFAR.
 
 <details>
   <summary>Parameter Descriptions</summary>
-    | Parameter | Description | Section/s |
-    |---|---|---|
-    | credentials |   | `pipeline` |
-    | sbids |   | `pipeline` |
-    | rootdir |   | `pipeline` |
-    | image |   |   |
-    | cmd |   |   |
-    | args |   |   |
-    | cores |   |   |
-    | ram |   |   |
+  
+  | Parameter   | Description | Section/s  |
+  |-------------|-------------|------------|
+  | credentials |             | [pipeline] |
+  | sbids       |             | [pipeline] |
+  | rootdir     |             | [pipeline] |
+  | image       |             |            |
+  | cmd         |             |            |
+  | args        |             |            |
+  | cores       |             |            |
 </details>
 
 ### 7. Run the pipeline
@@ -178,5 +178,5 @@ wallaby_mw_refactor/
 
 ## 🚀 Testing the Pipeline Locally
 
-**<p style="color:red;">INSERT INSTRUCTIONS</p>**
+**<font color="red">INSERT INSTRUCTIONS</font>**
 
