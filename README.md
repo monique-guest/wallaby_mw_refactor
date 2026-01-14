@@ -62,7 +62,7 @@ python -m pip install -e .
 ```bash
 pip install prefect
 ```
-$${\color{red}INSERT PREFECT SERVER INFO}$$
+$${\color{red}INSERT \space PREFECT \space SERVER \space INFO}$$
 
 ### 5. Create the `credentials.ini` file
 
@@ -107,7 +107,7 @@ ram = 8
 ```
 
 The only parameters that should require updating are those in the `[pipeline]` section. The pipeline 
-checks if $${\color{red}INSERT FILES}$$ already exist, and if they do it skips 
+checks if $${\color{red}INSERT \space FILES}$$ already exist, and if they do it skips 
 downloading them. If you want files to be re-downloaded, move or delete them in CANFAR.
 
 <details>
@@ -178,5 +178,5 @@ wallaby_mw_refactor/
 
 ## 🚀 Testing the Pipeline Locally
 
-$${\color{red}INSERT INSTRUCTIONS}$$
+$${\color{red}INSERT \space INSTRUCTIONS}$$
 
