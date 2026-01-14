@@ -12,8 +12,6 @@ They provide common functionality for:
 
 These modules are intentionally **Prefect-free** and **stage-agnostic**, so they can be reused by any stage or flow.
 
----
-
 ## 📁 Modules Overview
 
 ### `auth.py`
@@ -35,9 +33,9 @@ This keeps CASDA-specific auth logic out of the pipeline orchestration code.
 
 ### `canfar.py`
 
-*   Thin wrappers around the CANFAR / Skaha Python client.
+Thin wrappers around the CANFAR / Skaha Python client.
     
-*   Responsibilities:
+Responsibilities:
     
 *   Creating a configured Session client using registry credentials
     
@@ -72,9 +70,9 @@ The goal is to keep all Skaha interaction in this module, not scattered througho
 
 ### `checksums.py`
 
-*   Utilities for computing and validating file checksums (currently MD5).
+Utilities for computing and validating file checksums (currently MD5).
     
-*   Responsibilities:
+Responsibilities:
     
 *   Calculating MD5 checksum of a file on disk
     
@@ -189,9 +187,7 @@ Responsibilities:
 
 *   Basic timestamp utilities (e.g., utc_now_iso())
 
-Typical pattern:
-
-Each stage builds a Python dict describing:
+Typically, each stage builds a Python dict describing:
 
 *   stage name
 
