@@ -4,6 +4,16 @@ This folder contains the individual processing stages that make up the WALLABY M
 
 Each stage is implemented as a standalone Python module and is designed to:
 
+*   Run independently in a container
+    
+*   Receive input via CLI arguments or environment variables
+    
+*   Write outputs and a manifest JSON
+    
+*   Be orchestrated by Prefect
+    
+*   Support execution either locally or on CANFAR Skaha
+
 ## Stages
 
 ### casda_download.py
