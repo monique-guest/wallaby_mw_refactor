@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 from astroquery.utils.tap.core import TapPlus
 from astroquery.casda import Casda
 from urllib.parse import urlparse
@@ -12,7 +13,7 @@ from wallaby_mw.utils.auth import (
     login_casda,
 )
 from astropy.utils import iers
-from wallaby_mw.utils.files import filename_from_url
+from wallaby_mw.utils.files import filename_from_url, create_symlinks_from_patterns
 from wallaby_mw.utils.checksums import md5sum, read_checksum_file
 from wallaby_mw.utils.errors import WallabyPipelineError, CasdaError, CasdaAuthError, CasdaStagingError, CasdaTapJobError
 from wallaby_mw.utils.manifest import utc_now_iso, write_manifest
@@ -273,6 +274,33 @@ def run(sbids, rootdir):
                     )
 
                 logging.info(f"Checksum OK for file: {file}")
+
+            # Create symlinks
+            patterns = [
+                {
+                    "startswith": "image.restored.i.",
+                    "endswith": ".cube.MilkyWay.contsub.fits",
+                    "link": "cube.fits",
+                    "key": "cube_fits",
+                    "required": True,
+                },
+                {
+                    "startswith": "weights.i.",
+                    "endswith": ".cube.MilkyWay.fits",
+                    "link": "cube_weights.fits",
+                    "key": "cube_weights_fits",
+                    "required": False,
+                },
+            ]
+
+            canonical_outputs = create_symlinks_from_patterns(
+                base_dir=casda_dir,
+                filenames=expected_fits,
+                patterns=patterns,
+            )
+
+            # Add canonical paths into manifest outputs
+            stage_manifest["outputs"].update(canonical_outputs)
 
             sbid_manifest = {
                 "sbid": int(sbid),
