@@ -52,6 +52,7 @@ def _submit_task(
     pipeline_cfg: configparser.ConfigParser,
     section: str,
     env: dict[str, str] | None = None,
+    fmt: dict[str, str] | None = None,
     ) -> str:
     """
     Generic function to submit CANFAR as Prefect tasks. 
@@ -68,11 +69,22 @@ def _submit_task(
 
     image = stage["image"]
     cmd = stage.get("cmd", "python")
-    args = stage["args"].format(sbids=sbids, rootdir=rootdir)
+
+    # Base placeholders
+    format_values = {
+        "rootdir": rootdir,
+        "sbids": sbids,
+    }
+
+    # Add/override placeholders for this specific call
+    if fmt:
+        format_values.update(fmt)
+
+    args = stage["args"].format(**format_values)
     cores = stage.getint("cores", 2)
     ram = stage.getint("ram", 8)
 
-    name = f"{section}-{sbids.replace(' ', '-')}"
+    name = f"{section}-{format_values.get('sbid', sbids).replace(' ', '-')}"
 
     session = start_session()
 
@@ -103,10 +115,21 @@ def _run_casda(
     casda_session = _submit_task(pipeline_cfg=pipeline_cfg, section="casda", env=env)
     return casda_session
 
+def _run_subfits(
+    pipeline_cfg: configparser.ConfigParser,
+    sbid: str
+    ) -> str:
+    subfits_session = _submit_task(pipeline_cfg=pipeline_cfg, section="subfits", env={}, fmt={"sbid": sbid})
+    return subfits_session
+
 @task(name="casda")
 def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
     casda_session = _run_casda(pipeline_cfg=pipeline_cfg)
     return casda_session
+
+@task(name="subfits")
+def subfits_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
+    subfits_session = _run_subfits(pipeline_cfg=pipeline_cfg, sbid=sbid)
 
 @flow(name="wallaby-mw-pipeline")
 def wallaby_flow(config_path: str) -> str:
@@ -114,7 +137,29 @@ def wallaby_flow(config_path: str) -> str:
     Prefect task wrapper.
     """
     config = _setup(config_path=config_path)
-    casda_session = casda_task(pipeline_cfg=config)
+
+    # Extract sbids
+    sbids = config["pipeline"]["sbids"].split()
+
+    # CASDA Step
+    run_casda = config.getboolean("casda", "run", fallback=True)
+
+    if run_casda:
+        casda_future = casda_task.submit(pipeline_cfg=config)
+        casda_future.result()  # wait for CASDA to finish for all SBIDs
+    else:
+        print(f"[casda] Skipped because config['casda']['run']={config['casda']['run']}.")
+
+    # Subfits Step (runs sbids in parallel)
+    subfits_futures = []
+    for sbid in sbids:
+        print(f"[subfits] Submitted for sbid={sbid}")
+        fut = subfits_task.submit(pipeline_cfg=config, sbid=sbid)
+        subfits_futures.append(fut)
+
+    # Wait for all subfits tasks to finish
+    for fut in subfits_futures:
+        fut.result()   # blocks until the task (i.e. Skaha job) is complete
 
 def main(argv=None):
 

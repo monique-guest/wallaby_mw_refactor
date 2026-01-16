@@ -1,7 +1,7 @@
 import os
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Tuple, Literal, List, Dict, Any
 from urllib.parse import urlparse
 
 def nonempty_file_exists(filepath):
@@ -135,4 +135,34 @@ def create_symlinks_from_patterns(
         outputs[key] = str(link_path.resolve())
 
     logging.debug(f"\n[create_symlinks_from_patterns] Outputs: {outputs}\n")
-    return outputs
+    return outputs 
+
+def file_status_by_size(path: str | Path, min_bytes: int):
+    """
+    Classify a file as 'missing', 'partial', or 'ok' based on its size.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the file.
+    min_bytes : int
+        Minimum size in bytes for the file to be considered complete.
+
+    Returns
+    -------
+    status : {'missing', 'partial', 'ok'}
+        - 'missing'  : file does not exist
+        - 'partial'  : file exists but size < min_bytes
+        - 'ok'       : file exists and size >= min_bytes
+    size : int
+        File size in bytes, or 0 if missing.
+    """
+    p = Path(path)
+    if not p.exists():
+        return "missing", 0
+
+    size = p.stat().st_size
+    if size < min_bytes:
+        return "partial", size
+
+    return "ok", size

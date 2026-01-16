@@ -10,6 +10,7 @@ def main(argv=None) -> int:
             "  python -m wallaby_mw <command> [args]\n\n"
             "Commands:\n"
             "  casda-download   Download WALLABY MW products from CASDA\n"
+            "  apply-subfits    Run subfits on CASDA cubes\n"
         )
         return 0
 
@@ -17,8 +18,11 @@ def main(argv=None) -> int:
 
     if cmd in ("casda-download", "casda_download"):
         from wallaby_mw.stages.casda_download import main as casda_main
-        casda_main(argv)
-        return 0
+        return casda_main(argv)
+
+    if cmd in ("apply-subfits", "apply_subfits"):
+        from wallaby_mw.stages.apply_subfits import main as subfits_main
+        return subfits_main(argv)
 
     print(f"Unknown command: {cmd}\nUse --help for usage.")
     return 2
