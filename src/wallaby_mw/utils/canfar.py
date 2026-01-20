@@ -11,7 +11,7 @@ from canfar.images import Images
 from canfar.models.registry import ContainerRegistry
 from canfar.models.config import Configuration
 
-def start_session() -> Session:
+def start_session(timeout: int = 180) -> Session:
     """Build a Session using Harbor creds from env vars."""
     user = os.environ.get("CANFAR_REGISTRY_USERNAME")
     secret = os.environ.get("CANFAR_REGISTRY_SECRET")
@@ -24,7 +24,7 @@ def start_session() -> Session:
     cfg = Configuration(
         registry=ContainerRegistry(username=user, secret=secret)
     )
-    return Session(config=cfg)
+    return Session(timeout=timeout, config=cfg)
 
 def list_container_images() -> list[dict]:
     images_client = Images()
@@ -52,7 +52,20 @@ def submit_test_job() -> str:
         "env": {},
     }
 
-    session_ids = session.create(**job_params)
+    try:
+        session_ids = session.create(**job_params)
+        if not session_ids:
+            raise RuntimeError("session.create returned no session IDs")
+        return session_ids[0]
+    except Exception as e:
+        print("\n[submit_test_job] create() failed")
+        print("exception type:", type(e).__name__)
+        print("exception:", e)
+        # Sometimes canfar exceptions carry response fields:
+        for attr in ("status_code", "response", "text", "content", "body"):
+            if hasattr(e, attr):
+                print(f"{attr}:", getattr(e, attr))
+        raise
     return session_ids[0]
 
 def get_session_by_id(session_obj, session_id):
@@ -108,16 +121,41 @@ def submit_job(
     env: Mapping[str, str] | None = None,
 ) -> str:
     """Submit a headless Skaha job and return the session ID."""
-    ids: Sequence[str] = session.create(
-        name=name,
-        image=image,
-        kind="headless",
-        cmd=cmd,
-        args=args,
-        cores=cores,
-        ram=ram,
-        env=dict(env or {}),
-    )
+    try:
+        ids = session.create(
+            name=name,
+            image=image,
+            kind="headless",
+            cmd=cmd,
+            args=args,
+            cores=cores,
+            ram=ram,
+            env=env if env else None,
+        )
+    except Exception as e:
+        # This is the key: surface the *actual* error from Skaha/canfar
+        print("\n[submit_job] EXCEPTION while creating Skaha session")
+        print(f"  name={name}")
+        print(f"  image={image}")
+        print(f"  kind=headless cmd={cmd}")
+        print(f"  cores={cores} ram={ram}")
+        print(f"  args={args!r}")
+        print(f"  env={env}")
+        print(f"  exception={type(e).__name__}: {e}")
+        raise
+
+    if not ids:
+        print("\n[submit_job] Skaha returned no session IDs.")
+        print(f"  name={name}")
+        print(f"  image={image}")
+        print(f"  kind=headless cmd={cmd}")
+        print(f"  cores={cores} ram={ram}")
+        print(f"  args={args!r}")
+        print(f"  env={env}")
+        raise RuntimeError(
+            "Skaha session creation failed: no session IDs returned."
+        )
+    
     return ids[0]
 
 def live_logs(

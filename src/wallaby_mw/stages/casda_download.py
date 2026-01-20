@@ -148,6 +148,7 @@ def run(sbids, rootdir):
 
         # Process one SBID at a time
         for sbid in sbids:
+            sbid = sbid.strip("[]").strip()
             obs_id = f"ASKAP-{sbid}"
             logging.info(f"Processing SBID {sbid}")
 

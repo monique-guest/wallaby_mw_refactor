@@ -67,6 +67,7 @@ def _submit_task(
     sbids = pipeline_cfg["pipeline"]["sbids"]
     stage = pipeline_cfg[section]
 
+    timeout = stage.getint("timeout", fallback=120)
     image = stage["image"]
     cmd = stage.get("cmd", "python")
 
@@ -86,7 +87,7 @@ def _submit_task(
 
     name = f"{section}-{format_values.get('sbid', sbids).replace(' ', '-')}"
 
-    session = start_session()
+    session = start_session(timeout=timeout)
 
     session_id = submit_job(
         session=session,
@@ -96,7 +97,7 @@ def _submit_task(
         args=args,
         cores=cores,
         ram=ram,
-        env=env
+        env=env if env else None
     )
 
     print(f"Launched session for [{section}]", session_id)
@@ -119,7 +120,7 @@ def _run_subfits(
     pipeline_cfg: configparser.ConfigParser,
     sbid: str
     ) -> str:
-    subfits_session = _submit_task(pipeline_cfg=pipeline_cfg, section="subfits", env={}, fmt={"sbid": sbid})
+    subfits_session = _submit_task(pipeline_cfg=pipeline_cfg, section="subfits", env=None, fmt={"sbid": sbid})
     return subfits_session
 
 @task(name="casda")
