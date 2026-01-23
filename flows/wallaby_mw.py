@@ -72,10 +72,11 @@ def _submit_task(
     cmd = stage.get("cmd", "python")
 
     # Base placeholders
-    format_values = {
+    format_values = dict(stage)
+    format_values.update({
         "rootdir": rootdir,
         "sbids": sbids,
-    }
+    })
 
     # Add/override placeholders for this specific call
     if fmt:
@@ -123,6 +124,13 @@ def _run_subfits(
     subfits_session = _submit_task(pipeline_cfg=pipeline_cfg, section="subfits", env=None, fmt={"sbid": sbid})
     return subfits_session
 
+def _run_hi4pi(
+    pipeline_cfg: configparser.ConfigParser,
+    sbid: str
+    ) -> str:
+    hi4pi_session = _submit_task(pipeline_cfg=pipeline_cfg, section="hi4pi", env=None, fmt={"sbid": sbid})
+    return hi4pi_session
+
 @task(name="casda")
 def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
     casda_session = _run_casda(pipeline_cfg=pipeline_cfg)
@@ -131,6 +139,10 @@ def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
 @task(name="subfits")
 def subfits_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
     subfits_session = _run_subfits(pipeline_cfg=pipeline_cfg, sbid=sbid)
+
+@task(name="hi4pi")
+def hi4pi_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
+    hi4pi_session = _run_hi4pi(pipeline_cfg=pipeline_cfg, sbid=sbid)
 
 @flow(name="wallaby-mw-pipeline")
 def wallaby_flow(config_path: str) -> str:
@@ -161,6 +173,20 @@ def wallaby_flow(config_path: str) -> str:
     # Wait for all subfits tasks to finish
     for fut in subfits_futures:
         fut.result()   # blocks until the task (i.e. Skaha job) is complete
+
+    # HI4PI Step
+    run_hi4pi = config.getboolean("hi4pi", "run", fallback=True)
+    if run_hi4pi:
+        hi4pi_futures = []
+        for sbid in sbids:
+            print(f"[hi4pi] Submitted for sbid={sbid}")
+            fut = hi4pi_task.submit(pipeline_cfg=config, sbid=sbid)
+            hi4pi_futures.append(fut)
+        
+        for fut in hi4pi_futures:
+            fut.result()
+    else:
+        print(f"[hi4pi] Skipped because config['hi4pi']['run']={config.get('hi4pi', 'run', fallback='False')}.")
 
 def main(argv=None):
 

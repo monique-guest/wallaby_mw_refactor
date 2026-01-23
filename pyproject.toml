@@ -14,7 +14,8 @@ dependencies = [
   "keyring",
   "keyrings.alt",
   "prefect>=3,<4",
-  "canfar"
+  "canfar",
+  "wget"
 ]
 
 [tool.setuptools]

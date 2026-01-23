@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
-from pathlib import Path
 from astroquery.utils.tap.core import TapPlus
-from astroquery.casda import Casda
-from urllib.parse import urlparse
 from astropy.utils.exceptions import AstropyWarning
-from datetime import datetime, timezone
 from wallaby_mw.utils.auth import (
     install_auth_failure_handler,
-    setup_plaintext_keyring,
-    read_casda_credentials_ini,
-    ensure_casda_password_in_keyring,
     login_casda,
 )
 from astropy.utils import iers
@@ -21,12 +14,8 @@ import time
 import logging 
 import socket 
 import os
-import hashlib
 import argparse
-import sys
 import warnings
-import configparser
-import json
 
 iers.conf.auto_download = False
 
