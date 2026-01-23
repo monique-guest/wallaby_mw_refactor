@@ -11,18 +11,29 @@ def main(argv=None) -> int:
             "Commands:\n"
             "  casda-download   Download WALLABY MW products from CASDA\n"
             "  apply-subfits    Run subfits on CASDA cubes\n"
+            "  hi4pi-download    Download matching HI4PI cubes\n"
+            "\n"
+            "For command-specific help:\n"
+            "  python -m wallaby_mw <command> --help\n"
         )
         return 0
 
     cmd = argv.pop(0)
 
+    # CASDA download
     if cmd in ("casda-download", "casda_download"):
         from wallaby_mw.stages.casda_download import main as casda_main
         return casda_main(argv)
 
+    # Apply subfits
     if cmd in ("apply-subfits", "apply_subfits"):
         from wallaby_mw.stages.apply_subfits import main as subfits_main
         return subfits_main(argv)
+    
+    # HI4PI download
+    if cmd in ("hi4pi-download", "hi4pi_download"):
+        from wallaby_mw.stages.hi4pi_download import main as hi4pi_main
+        return hi4pi_main(argv)
 
     print(f"Unknown command: {cmd}\nUse --help for usage.")
     return 2
