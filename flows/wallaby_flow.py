@@ -139,10 +139,12 @@ def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
 @task(name="subfits")
 def subfits_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
     subfits_session = _run_subfits(pipeline_cfg=pipeline_cfg, sbid=sbid)
+    return subfits_session
 
 @task(name="hi4pi")
 def hi4pi_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
     hi4pi_session = _run_hi4pi(pipeline_cfg=pipeline_cfg, sbid=sbid)
+    return hi4pi_session
 
 @flow(name="wallaby-mw-pipeline")
 def wallaby_flow(config_path: str) -> str:
@@ -164,15 +166,19 @@ def wallaby_flow(config_path: str) -> str:
         print(f"[casda] Skipped because config['casda']['run']={config['casda']['run']}.")
 
     # Subfits Step (runs sbids in parallel)
-    subfits_futures = []
-    for sbid in sbids:
-        print(f"[subfits] Submitted for sbid={sbid}")
-        fut = subfits_task.submit(pipeline_cfg=config, sbid=sbid)
-        subfits_futures.append(fut)
+    run_subfits = config.getboolean("subfits", "run", fallback=True)
+    if run_subfits:
+        subfits_futures = []
+        for sbid in sbids:
+            print(f"[subfits] Submitted for sbid={sbid}")
+            fut = subfits_task.submit(pipeline_cfg=config, sbid=sbid)
+            subfits_futures.append(fut)
 
-    # Wait for all subfits tasks to finish
-    for fut in subfits_futures:
-        fut.result()   # blocks until the task (i.e. Skaha job) is complete
+        # Wait for all subfits tasks to finish
+        for fut in subfits_futures:
+            fut.result()   # blocks until the task (i.e. Skaha job) is complete
+    else:
+        print(f"[subfits] Skipped because config['subfits']['run']={config.get('subfits', 'run', fallback='False')}.")
 
     # HI4PI Step
     run_hi4pi = config.getboolean("hi4pi", "run", fallback=True)
