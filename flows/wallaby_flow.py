@@ -178,7 +178,7 @@ def wallaby_flow(config_path: str) -> str:
         for fut in subfits_futures:
             fut.result()   # blocks until the task (i.e. Skaha job) is complete
     else:
-        print(f"[subfits] Skipped because config['subfits']['run']={config.get('subfits', 'run', fallback='False')}.")
+        print(f"[subfits] Skipped because config['subfits']['run']={config.get('subfits', 'run', fallback='True')}.")
 
     # HI4PI Step
     run_hi4pi = config.getboolean("hi4pi", "run", fallback=True)
@@ -192,7 +192,7 @@ def wallaby_flow(config_path: str) -> str:
         for fut in hi4pi_futures:
             fut.result()
     else:
-        print(f"[hi4pi] Skipped because config['hi4pi']['run']={config.get('hi4pi', 'run', fallback='False')}.")
+        print(f"[hi4pi] Skipped because config['hi4pi']['run']={config.get('hi4pi', 'run', fallback='True')}.")
 
 def main(argv=None):
 
