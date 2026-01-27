@@ -215,7 +215,7 @@ def generate_script(inp: Inputs) -> Outputs:
     return Outputs(script_path=inp.script_path, output_fits=inp.output_fits, miriad_dir=inp.miriad_dir)
 
 
-def main(argv=None) -> int:
+def main(argv=None):
     args = parse_args(argv)
 
     inp = build_inputs(
@@ -234,8 +234,7 @@ def main(argv=None) -> int:
         size_arcmin=int(args.size),
     )
     generate_script(inp)
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

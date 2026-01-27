@@ -12,6 +12,7 @@ def main(argv=None) -> int:
             "  casda-download   Download WALLABY MW products from CASDA\n"
             "  apply-subfits    Run subfits on CASDA cubes\n"
             "  hi4pi-download    Download matching HI4PI cubes\n"
+            "  generate-script   Generate MIRIAD script for WALLABY+HI4PI combination\n"
             "\n"
             "For command-specific help:\n"
             "  python -m wallaby_mw <command> --help\n"
@@ -34,6 +35,11 @@ def main(argv=None) -> int:
     if cmd in ("hi4pi-download", "hi4pi_download"):
         from wallaby_mw.stages.hi4pi_download import main as hi4pi_main
         return hi4pi_main(argv)
+
+    # Generate MIRIAD script
+    if cmd in ("generate-script", "generate_script"):
+        from wallaby_mw.stages.generate_script import main as gen_script_main
+        return gen_script_main(argv)
 
     print(f"Unknown command: {cmd}\nUse --help for usage.")
     return 2

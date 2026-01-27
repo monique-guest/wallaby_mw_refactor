@@ -19,6 +19,9 @@ dependencies = [
   "tqdm"
 ]
 
+[project.scripts]
+wallaby-mw = "wallaby_mw.__main__:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
