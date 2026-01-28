@@ -37,9 +37,9 @@ def main(argv=None) -> int:
         return hi4pi_main(argv)
 
     # Generate MIRIAD script
-    if cmd in ("generate-script", "generate_script"):
-        from wallaby_mw.stages.generate_script import main as gen_script_main
-        return gen_script_main(argv)
+    if cmd in ("miriad-script", "miriad_script"):
+        from wallaby_mw.stages.miriad_script import main as miriad_script_main
+        return miriad_script_main(argv)
 
     print(f"Unknown command: {cmd}\nUse --help for usage.")
     return 2

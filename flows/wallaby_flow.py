@@ -86,7 +86,7 @@ def _submit_task(
     cores = stage.getint("cores", 2)
     ram = stage.getint("ram", 8)
 
-    name = f"{section}-{format_values.get('sbid', sbids).replace(' ', '-')}"
+    name = f"{section.replace('_', '-')}-{format_values.get('sbid', sbids).replace(' ', '-')}"
 
     session = start_session(timeout=timeout)
 
@@ -131,6 +131,13 @@ def _run_hi4pi(
     hi4pi_session = _submit_task(pipeline_cfg=pipeline_cfg, section="hi4pi", env=None, fmt={"sbid": sbid})
     return hi4pi_session
 
+def _run_miriad_script(
+    pipeline_cfg: configparser.ConfigParser,
+    sbid: str
+    ) -> str:
+    miriad_script_session = _submit_task(pipeline_cfg=pipeline_cfg, section="miriad_script", env=None, fmt={"sbid": sbid})
+    return miriad_script_session
+
 @task(name="casda")
 def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
     casda_session = _run_casda(pipeline_cfg=pipeline_cfg)
@@ -145,6 +152,11 @@ def subfits_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
 def hi4pi_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
     hi4pi_session = _run_hi4pi(pipeline_cfg=pipeline_cfg, sbid=sbid)
     return hi4pi_session
+
+@task(name="miriad-script")
+def miriad_script_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
+    miriad_script_session = _run_miriad_script(pipeline_cfg=pipeline_cfg, sbid=sbid)
+    return miriad_script_session
 
 @flow(name="wallaby-mw-pipeline")
 def wallaby_flow(config_path: str) -> str:
@@ -193,6 +205,20 @@ def wallaby_flow(config_path: str) -> str:
             fut.result()
     else:
         print(f"[hi4pi] Skipped because config['hi4pi']['run']={config.get('hi4pi', 'run', fallback='True')}.")
+
+    # Generate Miriad Script Step
+    run_miriad_script = config.getboolean("miriad_script", "run", fallback=True)
+    if run_miriad_script:
+        miriad_script_futures = []
+        for sbid in sbids:
+            print(f"[miriad_script] Submitted for sbid={sbid}")
+            fut = miriad_script_task.submit(pipeline_cfg=config, sbid=sbid)
+            miriad_script_futures.append(fut)
+        
+        for fut in miriad_script_futures:
+            fut.result()
+    else:
+        print(f"[miriad_script] Skipped because config['miriad_script']['run']={config.get('miriad_script', 'run', fallback='True')}.")
 
 def main(argv=None):
 
