@@ -138,6 +138,13 @@ def _run_miriad_script(
     miriad_script_session = _submit_task(pipeline_cfg=pipeline_cfg, section="miriad_script", env=None, fmt={"sbid": sbid})
     return miriad_script_session
 
+def _run_miriad(
+    pipeline_cfg: configparser.ConfigParser,
+    sbid: str
+    ) -> str:
+    miriad_session = _submit_task(pipeline_cfg=pipeline_cfg, section="miriad", env=None, fmt={"sbid": sbid})
+    return miriad_session
+
 @task(name="casda")
 def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
     casda_session = _run_casda(pipeline_cfg=pipeline_cfg)
@@ -157,6 +164,11 @@ def hi4pi_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
 def miriad_script_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
     miriad_script_session = _run_miriad_script(pipeline_cfg=pipeline_cfg, sbid=sbid)
     return miriad_script_session
+
+@task(name="miriad")
+def miriad_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
+    miriad_session = _run_miriad(pipeline_cfg=pipeline_cfg, sbid=sbid)
+    return miriad_session
 
 @flow(name="wallaby-mw-pipeline")
 def wallaby_flow(config_path: str) -> str:
@@ -219,6 +231,20 @@ def wallaby_flow(config_path: str) -> str:
             fut.result()
     else:
         print(f"[miriad_script] Skipped because config['miriad_script']['run']={config.get('miriad_script', 'run', fallback='True')}.")
+
+    # Run Miriad Combine Step
+    run_miriad = config.getboolean("miriad", "run", fallback=True)
+    if run_miriad:
+        miriad_futures = []
+        for sbid in sbids:
+            print(f"[miriad] Submitted for sbid={sbid}")
+            fut = miriad_task.submit(pipeline_cfg=config, sbid=sbid)
+            miriad_futures.append(fut)
+        
+        for fut in miriad_futures:
+            fut.result()
+    else:
+        print(f"[miriad] Skipped because config['miriad']['run']={config.get('miriad', 'run', fallback='True')}.")
 
 def main(argv=None):
 
