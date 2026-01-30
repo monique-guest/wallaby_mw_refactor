@@ -170,41 +170,50 @@ def generate_script(inp: Inputs) -> Outputs:
     if region_str is None:
         region_str = _compute_region_string(inp.wallaby_fits, inp.size_arcmin)
 
-    workdir = inp.miriad_dir
+    scratch_root = Path("/scratch") / "wallaby_mw" / inp.sbid
+    workdir = scratch_root / "miriad_work"
+    inputs_dir = scratch_root / "inputs"
 
     lines = [
-        "#!/bin/csh\n",
-        "miriad\n",
-        "\n",
-        "# Read FITS into MIRIAD format\n",
-        f"fits in={inp.singledish_fits} op=xyin out={workdir / 'sd'}\n",
-        f"fits in={inp.wallaby_fits} op=xyin out={workdir / 'wallaby'}\n",
-        "\n",
-        "# Preprocess single-dish data\n",
-        f"hanning in={workdir / 'sd'} out={workdir / 'sd_hann'}\n",
-        f"imsub in={workdir / 'sd_hann'} out={workdir / 'sd_imsub_incr'} incr=1,1,2\n",
-        (
-            f"imsub in={workdir / 'sd_imsub_incr'} out={workdir / 'sd_imsub'} "
-            f"\"region=images({inp.imsub_hi4pi_channels})\"\n"
-        ),
-        "\n",
-        "# Preprocess WALLABY data\n",
-        f"velsw in={workdir / 'wallaby'} axis=freq options=altspc\n",
-        f"velsw in={workdir / 'wallaby'} axis=freq,lsrk\n",
-        (
-            f"imsub in={workdir / 'wallaby'} out={workdir / 'wallaby_trim'} "
-            f"\"region=boxes({region_str})({inp.imsub_wallaby_channels})\"\n"
-        ),
-        "\n",
-        "# Regrid and merge\n",
-        f"regrid in={workdir / 'sd_imsub'} tin={workdir / 'wallaby_trim'} out={workdir / 'sd_regrid'}\n",
-        (
-            f"immerge in={workdir / 'wallaby_trim'},{workdir / 'sd_regrid'} "
-            f"out={workdir / 'combined'} uvrange={inp.immerge_uvrange} options=notaper\n"
-        ),
-        f"fits in={workdir / 'combined'} op=xyout out={inp.output_fits}\n",
-        "\n",
-        "exit\n",
+    "#!/bin/csh\n",
+    "\n",
+    f"set work = {workdir}\n",
+    f"set inputs = {inputs_dir}\n",
+    f"set outdir = {inp.miriad_dir}\n",
+    "\n",
+    "# Ensure directories exist\n",
+    "mkdir -p $work\n",
+    "mkdir -p $inputs\n",
+    "mkdir -p $outdir\n",
+    "\n",
+    "# Stage inputs into scratch (symlinks)\n",
+    f"ln -sf {inp.singledish_fits} $inputs/hi4pi.fits\n",
+    f"ln -sf {inp.wallaby_fits} $inputs/wallaby.fits\n",
+    "\n",
+    "miriad\n",
+    "\n",
+    "# Read FITS into MIRIAD datasets (ALL UNDER $work)\n",
+    "fits in=$inputs/hi4pi.fits op=xyin out=$work/sd\n",
+    "fits in=$inputs/wallaby.fits op=xyin out=$work/wallaby\n",
+    "\n",
+    "# Preprocess single-dish data\n",
+    "hanning in=$work/sd out=$work/sd_hann\n",
+    "imsub in=$work/sd_hann out=$work/sd_imsub_incr incr=1,1,2\n",
+    f"imsub in=$work/sd_imsub_incr out=$work/sd_imsub \"region=images({inp.imsub_hi4pi_channels})\"\n",
+    "\n",
+    "# Preprocess WALLABY data\n",
+    "velsw in=$work/wallaby axis=freq options=altspc\n",
+    "velsw in=$work/wallaby axis=freq,lsrk\n",
+    f"imsub in=$work/wallaby out=$work/wallaby_trim \"region=boxes({region_str})({inp.imsub_wallaby_channels})\"\n",
+    "\n",
+    "# Regrid and merge\n",
+    "regrid in=$work/sd_imsub tin=$work/wallaby_trim out=$work/sd_regrid\n",
+    f"immerge in=$work/wallaby_trim,$work/sd_regrid out=$work/combined uvrange={inp.immerge_uvrange} options=notaper\n",
+    "\n",
+    "# Write final FITS back to pipeline output (under /arc via rootdir)\n",
+    f"fits in=$work/combined op=xyout out={inp.output_fits}\n",
+    "\n",
+    "exit\n",
     ]
 
     logger.info("Writing MIRIAD script: %s", inp.script_path)

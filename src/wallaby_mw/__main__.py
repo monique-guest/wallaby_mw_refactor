@@ -12,7 +12,7 @@ def main(argv=None) -> int:
             "  casda-download   Download WALLABY MW products from CASDA\n"
             "  apply-subfits    Run subfits on CASDA cubes\n"
             "  hi4pi-download    Download matching HI4PI cubes\n"
-            "  generate-script   Generate MIRIAD script for WALLABY+HI4PI combination\n"
+            "  miriad-script   Generate MIRIAD script for WALLABY+HI4PI combination\n"
             "\n"
             "For command-specific help:\n"
             "  python -m wallaby_mw <command> --help\n"

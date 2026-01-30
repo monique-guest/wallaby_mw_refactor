@@ -16,6 +16,8 @@ This repository contains:
 
 The pipeline is intended to be run on CANFAR, but the ability to runs scripts and build containers locally is supported.
 
+See AGENT.md for authoritative pipeline architecture, execution model, and constraints.
+
 ## 📦 Features
     
 *   **Containerized execution:** Each stage runs inside a dedicated Docker/OCI container for reproducibility.
