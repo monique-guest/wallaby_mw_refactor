@@ -3,6 +3,8 @@ import os
 import configparser
 from typing import Optional, Tuple
 
+from wallaby_mw.utils.errors import CasdaAuthError
+
 KEYRING_SERVICE = "astroquery:casda.csiro.au"
 
 # Authentication failure detection
@@ -112,4 +114,32 @@ def login_casda(
 
     casda = Casda()
     casda.login(username=username)
+    return casda, username
+
+
+def ensure_casda_login(
+    username: str | None = None,
+    password: str | None = None,
+):
+    """
+    Install auth failure handler (once) and login to CASDA.
+    Returns (casda, username).
+    """
+    root = logging.getLogger()
+    handler = None
+    for existing in root.handlers:
+        if isinstance(existing, AuthFailureHandler):
+            handler = existing
+            break
+    if handler is None:
+        handler = AuthFailureHandler()
+        root.addHandler(handler)
+
+    casda, username = login_casda(username=username, password=password)
+    logging.info("CASDA login attempt for %s", username)
+
+    if handler.failed:
+        raise CasdaAuthError(f"CASDA login failed (detected from logs): {handler.msg}")
+
+    logging.info("CASDA login OK for %s", username)
     return casda, username

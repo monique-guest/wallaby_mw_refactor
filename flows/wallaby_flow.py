@@ -20,7 +20,7 @@ from wallaby_mw.utils.config import (
 from wallaby_mw.utils.canfar import (
     start_session,
     submit_job,
-    live_logs,
+    poll_sessions,
 )
 
 # Function to parse arguments 
@@ -102,19 +102,19 @@ def _submit_task(
     )
 
     print(f"Launched session for [{section}]", session_id)
-    final_status = live_logs(session=session, session_id=session_id)
-    print(f"[{section}] step finished with final status: {final_status}")
 
     return session_id
 
 def _run_casda(
-    pipeline_cfg: configparser.ConfigParser
+    pipeline_cfg: configparser.ConfigParser,
+    sbid: str,
     ) -> str:
     env = {
         "CASDA_USERNAME": os.environ["CASDA_USERNAME"],
         "CASDA_PASSWORD": os.environ["CASDA_PASSWORD"],
         } 
-    casda_session = _submit_task(pipeline_cfg=pipeline_cfg, section="casda", env=env)
+    fmt = {"sbid": sbid, "sbids": sbid}
+    casda_session = _submit_task(pipeline_cfg=pipeline_cfg, section="casda", env=env, fmt=fmt)
     return casda_session
 
 def _run_subfits(
@@ -146,8 +146,8 @@ def _run_miriad(
     return miriad_session
 
 @task(name="casda")
-def casda_task(pipeline_cfg: configparser.ConfigParser) -> str:
-    casda_session = _run_casda(pipeline_cfg=pipeline_cfg)
+def casda_task(pipeline_cfg: configparser.ConfigParser, sbid: str) -> str:
+    casda_session = _run_casda(pipeline_cfg=pipeline_cfg, sbid=sbid)
     return casda_session
 
 @task(name="subfits")
@@ -184,8 +184,14 @@ def wallaby_flow(config_path: str) -> str:
     run_casda = config.getboolean("casda", "run", fallback=True)
 
     if run_casda:
-        casda_future = casda_task.submit(pipeline_cfg=config)
-        casda_future.result()  # wait for CASDA to finish for all SBIDs
+        casda_futures = []
+        for sbid in sbids:
+            print(f"[casda] Submitted for sbid={sbid}")
+            fut = casda_task.submit(pipeline_cfg=config, sbid=sbid)
+            casda_futures.append(fut)
+
+        casda_session_ids = [fut.result() for fut in casda_futures]
+        poll_sessions(casda_session_ids)
     else:
         print(f"[casda] Skipped because config['casda']['run']={config['casda']['run']}.")
 
@@ -198,9 +204,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = subfits_task.submit(pipeline_cfg=config, sbid=sbid)
             subfits_futures.append(fut)
 
-        # Wait for all subfits tasks to finish
-        for fut in subfits_futures:
-            fut.result()   # blocks until the task (i.e. Skaha job) is complete
+        subfits_session_ids = [fut.result() for fut in subfits_futures]
+        poll_sessions(subfits_session_ids)
     else:
         print(f"[subfits] Skipped because config['subfits']['run']={config.get('subfits', 'run', fallback='True')}.")
 
@@ -213,8 +218,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = hi4pi_task.submit(pipeline_cfg=config, sbid=sbid)
             hi4pi_futures.append(fut)
         
-        for fut in hi4pi_futures:
-            fut.result()
+        hi4pi_session_ids = [fut.result() for fut in hi4pi_futures]
+        poll_sessions(hi4pi_session_ids)
     else:
         print(f"[hi4pi] Skipped because config['hi4pi']['run']={config.get('hi4pi', 'run', fallback='True')}.")
 
@@ -227,8 +232,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = miriad_script_task.submit(pipeline_cfg=config, sbid=sbid)
             miriad_script_futures.append(fut)
         
-        for fut in miriad_script_futures:
-            fut.result()
+        miriad_script_session_ids = [fut.result() for fut in miriad_script_futures]
+        poll_sessions(miriad_script_session_ids)
     else:
         print(f"[miriad_script] Skipped because config['miriad_script']['run']={config.get('miriad_script', 'run', fallback='True')}.")
 
@@ -241,8 +246,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = miriad_task.submit(pipeline_cfg=config, sbid=sbid)
             miriad_futures.append(fut)
         
-        for fut in miriad_futures:
-            fut.result()
+        miriad_session_ids = [fut.result() for fut in miriad_futures]
+        poll_sessions(miriad_session_ids)
     else:
         print(f"[miriad] Skipped because config['miriad']['run']={config.get('miriad', 'run', fallback='True')}.")
 
