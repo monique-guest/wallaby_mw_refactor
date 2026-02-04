@@ -15,9 +15,9 @@ from astropy.io import fits
 from astroquery.vizier import Vizier
 
 from wallaby_mw.utils.astro import get_centre_from_header
+from wallaby_mw.utils.logging import setup_logging
 from astropy.wcs import FITSFixedWarning
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 URL = 'https://cdsarc.u-strasbg.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/'
@@ -62,6 +62,13 @@ def parse_args(argv=None):
         "--vizier-server",
         default="vizier.cds.unistra.fr",
         help="Vizier server to query (e.g. vizier.cfa.harvard.edu)"
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging verbosity (default: INFO).",
     )
     parser.add_argument(
         "--query-timeout",
@@ -150,6 +157,10 @@ def download_hi4pi(
         "VizieR query params: centre=(%.6f, %.6f) width=%.3f deg timeout=%ss",
         ra, dec, width, query_timeout_s,
     )
+    def backoff_delay(base_seconds: int, attempt: int, cap_seconds: int = 300) -> int:
+        delay = base_seconds * (2 ** (attempt - 1))
+        return min(delay, cap_seconds)
+
     tables = None
     query_success = False
     attempts = query_retries + 1
@@ -168,7 +179,7 @@ def download_hi4pi(
                 type(e).__name__,
                 e,
             )
-            time.sleep(query_retry_wait_s)
+            time.sleep(backoff_delay(query_retry_wait_s, attempt))
 
     if not query_success:
         raise RuntimeError("VizieR query failed after retries.")
@@ -251,7 +262,7 @@ def download_hi4pi(
                         type(e).__name__,
                         e,
                     )
-                time.sleep(download_retry_wait_s)
+                time.sleep(backoff_delay(download_retry_wait_s, attempt))
 
         if not download_success:
             raise RuntimeError(f"Download failed after retries for {filename}.")
@@ -317,6 +328,7 @@ def run(
 
 def main(argv=None):
     args = parse_args(argv)
+    setup_logging(args.log_level)
     logger.info("Python executable: %s", sys.executable)
 
     rootdir = Path(args.rootdir)

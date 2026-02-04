@@ -1,35 +1,21 @@
 #!/usr/bin/env python3
 from astroquery.utils.tap.core import TapPlus
-from astropy.utils.exceptions import AstropyWarning
 from wallaby_mw.utils.auth import ensure_casda_login
 from astropy.utils import iers
 from wallaby_mw.utils.files import filename_from_url, create_symlinks_from_patterns
 from wallaby_mw.utils.checksums import md5sum, read_checksum_file
 from wallaby_mw.utils.errors import WallabyPipelineError, CasdaError, CasdaStagingError, CasdaTapJobError
 from wallaby_mw.utils.manifest import utc_now_iso, write_manifest, load_manifest, manifest_checksum_ok
+from wallaby_mw.utils.logging import setup_logging
 import time 
 import logging 
 import socket 
 import os
 import argparse
-import warnings
 
 iers.conf.auto_download = False
 
 socket.setdefaulttimeout(30)
-
-def setup_logging(level: str) -> None:
-    logging.basicConfig(level=getattr(logging, level, logging.INFO))
-    if level != "DEBUG":
-        logging.getLogger("astroquery").setLevel(logging.WARNING)
-        logging.getLogger("astropy").setLevel(logging.WARNING)
-
-    # Silence VOTable unit warnings from CASDA datalink ("pixel" unit)
-    warnings.filterwarnings(
-        "ignore",
-        message=r".*Invalid unit string 'pixel'.*",
-        category=AstropyWarning,
-    )
 
 # Function to parse arguments 
 def parse_args(argv=None):
