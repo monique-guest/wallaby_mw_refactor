@@ -60,10 +60,50 @@ def parse_args(argv=None):
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Logging verbosity (default: INFO).",
     )
+    parser.add_argument(
+        "--tap-timeout",
+        type=int,
+        default=15 * 60,
+        help="Timeout in seconds for the TAP query job (default: 900).",
+    )
+    parser.add_argument(
+        "--tap-retries",
+        type=int,
+        default=2,
+        help="Number of retries for TAP query failures/timeouts (default: 2).",
+    )
+    parser.add_argument(
+        "--tap-retry-wait",
+        type=int,
+        default=10,
+        help="Seconds to wait between TAP retries (default: 10).",
+    )
+    parser.add_argument(
+        "--download-retries",
+        type=int,
+        default=1,
+        help="Number of retries for CASDA downloads (default: 1).",
+    )
+    parser.add_argument(
+        "--download-retry-wait",
+        type=int,
+        default=10,
+        help="Seconds to wait between download retries (default: 10).",
+    )
 
     return parser.parse_args(argv)
 
-def run(sbid, rootdir, casda=None, username=None):
+def run(
+    sbid,
+    rootdir,
+    casda=None,
+    username=None,
+    tap_timeout_s: int = 15 * 60,
+    tap_retries: int = 2,
+    tap_retry_wait_s: int = 10,
+    download_retries: int = 1,
+    download_retry_wait_s: int = 10,
+):
     """
     Run the CASDA download stage for a single SBID.
 
@@ -100,32 +140,50 @@ def run(sbid, rootdir, casda=None, username=None):
     # Assign TAP URL to CASDAs TAP service endpoint
     tap = TapPlus(url=CASDA_TAP_URL)
 
-    # Submit the query to the TAP URL
-    print("Submitting async job...", flush=True)
-    job = tap.launch_job_async(adql, background=True)
-
-    print("Submitted. Job phase (initial):", job.get_phase(), flush=True)
-
-    # Set timeout (will this still be needed in prod?)
-    t0 = time.time()
-    timeout_s = 15 * 60
+    # Submit the query to the TAP URL (with retry)
     poll_every = 2
+    job = None
+    phase = None
+    tap_success = False
+    attempts = tap_retries + 1
 
-    # Set executing to True and get the jobs current phase
-    executing = True
-    phase = job.get_phase()
+    for attempt in range(1, attempts + 1):
+        print(f"Submitting async job (attempt {attempt}/{attempts})...", flush=True)
+        try:
+            job = tap.launch_job_async(adql, background=True)
+            print("Submitted. Job phase (initial):", job.get_phase(), flush=True)
 
-    # Poll the job to monitor phase
-    while executing:
-        time.sleep(poll_every)
-        phase = job.get_phase(update=True)
-        elapsed = int(time.time() - t0)
-        print(f"[{elapsed:>4}s] phase={phase}", flush=True)
+            t0 = time.time()
+            executing = True
+            phase = job.get_phase()
 
-        if phase in ("COMPLETED", "ERROR", "ABORTED"):
-            executing = False
-        if elapsed >= timeout_s:
-            raise CasdaTapJobError(f"TAP job timed out after {timeout_s}s; last phase={phase}")
+            while executing:
+                time.sleep(poll_every)
+                phase = job.get_phase(update=True)
+                elapsed = int(time.time() - t0)
+                print(f"[{elapsed:>4}s] phase={phase}", flush=True)
+
+                if phase in ("COMPLETED", "ERROR", "ABORTED"):
+                    executing = False
+                if elapsed >= tap_timeout_s:
+                    raise CasdaTapJobError(
+                        f"TAP job timed out after {tap_timeout_s}s; last phase={phase}"
+                    )
+
+            if phase == "COMPLETED":
+                tap_success = True
+                break
+            raise CasdaTapJobError(f"TAP job finished but not COMPLETED (phase={phase})")
+        except CasdaTapJobError as e:
+            if attempt >= attempts:
+                raise
+            logging.warning(
+                "TAP query failed (attempt %d/%d): %s", attempt, attempts, e
+            )
+            time.sleep(tap_retry_wait_s)
+
+    if not tap_success:
+        raise CasdaTapJobError("TAP query failed after retries")
 
     if phase == "COMPLETED":
         print("Final phase:", phase, flush=True)
@@ -142,7 +200,12 @@ def run(sbid, rootdir, casda=None, username=None):
         os.makedirs(sbid_dir, exist_ok=True)
         os.makedirs(casda_dir, exist_ok=True)
         sbid_manifest_path = os.path.join(sbid_dir, "manifest.json")
-        existing_manifest = load_manifest(sbid_manifest_path) or {}
+        existing_manifest = load_manifest(sbid_manifest_path)
+        if existing_manifest is None:
+            logging.debug("No existing manifest found at %s", sbid_manifest_path)
+            existing_manifest = {}
+        else:
+            logging.info("Loaded existing manifest: %s", sbid_manifest_path)
 
         stage_manifest = {
             "stage": "casda_download",
@@ -203,12 +266,38 @@ def run(sbid, rootdir, casda=None, username=None):
                     "status": "scheduled_download",
                 })
 
-        # Download the required files
+        # Download the required files (with retry)
         if urls_to_download:
             logging.info("Starting to download %d URLs for %s", len(urls_to_download), obs_id)
-            t_dl0 = time.time()
-            files = casda.download_files(urls_to_download, savedir=casda_dir)
-            logging.info("Download finished for %s in %.1fs (%d returned)", obs_id, time.time() - t_dl0, len(files))
+            files = []
+            download_success = False
+            attempts = download_retries + 1
+            for attempt in range(1, attempts + 1):
+                try:
+                    t_dl0 = time.time()
+                    files = casda.download_files(urls_to_download, savedir=casda_dir)
+                    logging.info(
+                        "Download finished for %s in %.1fs (%d returned)",
+                        obs_id,
+                        time.time() - t_dl0,
+                        len(files),
+                    )
+                    download_success = True
+                    break
+                except Exception as e:
+                    if attempt >= attempts:
+                        raise CasdaError(f"Download failed after retries for {obs_id}: {e}") from e
+                    logging.warning(
+                        "Download failed (attempt %d/%d) for %s: %s",
+                        attempt,
+                        attempts,
+                        obs_id,
+                        e,
+                    )
+                    time.sleep(download_retry_wait_s)
+
+            if not download_success:
+                raise CasdaError(f"Download failed after retries for {obs_id}")
 
             downloaded = {os.path.basename(str(p)) for p in files}
             for f in stage_manifest["files"]:
@@ -223,6 +312,7 @@ def run(sbid, rootdir, casda=None, username=None):
 
         # Checksum verification
         expected_fits = [f for f in expected_files if f.endswith(".fits")]
+        logging.info("Checksum verification for %d FITS files", len(expected_fits))
         for file in expected_fits:
             if not file.endswith(".fits"):
                 continue 
@@ -242,7 +332,7 @@ def run(sbid, rootdir, casda=None, username=None):
             checksum_path = data_path + ".checksum"
 
             if not os.path.exists(checksum_path):
-                logging.warning(f"No checksum file found for {file}")
+                logging.warning("No checksum file found for %s", file)
                 stage_manifest["checksums"].append({
                     "filename": file,
                     "data_path": data_path,
@@ -271,7 +361,7 @@ def run(sbid, rootdir, casda=None, username=None):
                     f"Checksum mismatch for {file}: expected {expected}, got {actual}"
                 )
 
-            logging.info(f"Checksum OK for file: {file}")
+            logging.info("Checksum OK for file: %s", file)
 
         # Create symlinks
         patterns = [
@@ -338,7 +428,17 @@ def main(argv=None):
 
     try:
         for sbid in args.sbids:
-            run(sbid=sbid, rootdir=args.rootdir, casda=casda, username=username)
+            run(
+                sbid=sbid,
+                rootdir=args.rootdir,
+                casda=casda,
+                username=username,
+                tap_timeout_s=args.tap_timeout,
+                tap_retries=args.tap_retries,
+                tap_retry_wait_s=args.tap_retry_wait,
+                download_retries=args.download_retries,
+                download_retry_wait_s=args.download_retry_wait,
+            )
     except WallabyPipelineError as e:
         logging.error(str(e))
         raise SystemExit(1) from e

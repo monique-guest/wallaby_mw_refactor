@@ -169,6 +169,8 @@ def live_logs(
     start_time = time.time()
     prev_logs_text = ""  # full logs from previous poll
     prev_status = None
+    next_pending_warn = 10 * 60
+    pending_warn_enabled = True
 
     def format_elapsed(seconds: float) -> str:
         seconds = int(seconds)
@@ -190,6 +192,7 @@ def live_logs(
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         elapsed = format_elapsed(time.time() - start_time)
         status = get_status(session, session_id)
+        elapsed_seconds = time.time() - start_time
 
         try:
             logs_dict = session.logs(ids=session_id) or {}
@@ -224,6 +227,14 @@ def live_logs(
             print(f"\n[ session {session_id} |{now} | elapsed {elapsed} | status {status} ]")
 
         prev_status = status
+
+        if status != "Pending" and pending_warn_enabled:
+            pending_warn_enabled = False
+
+        if pending_warn_enabled and status == "Pending" and elapsed_seconds >= next_pending_warn:
+            minutes = int(elapsed_seconds // 60)
+            print(f"[{now} | elapsed {elapsed}] WARNING: session {session_id} pending for {minutes} minutes")
+            next_pending_warn += 5 * 60
 
         if status in terminal_statuses:
             return status
@@ -292,7 +303,7 @@ def poll_sessions(
                 if len(new_lines) > max_new_lines:
                     new_lines = new_lines[-max_new_lines:]
 
-                header = f"[{now} | elapsed {elapsed} | session {session_id} | status {status}]"
+                header = f"[ session {session_id} |{now} | elapsed {elapsed} | status {status} ]"
                 print("\n" + header)
                 for line in new_lines:
                     print(f"{session_id} {elapsed} | {line}")
@@ -300,7 +311,7 @@ def poll_sessions(
                 state[session_id]["prev_logs_text"] = full_text
 
             elif status_changed:
-                print(f"\n[{now} | elapsed {elapsed} | session {session_id} | status {status}]")
+                print(f"\n[ session {session_id} |{now} | elapsed {elapsed} | status {status} ]")
 
             state[session_id]["prev_status"] = status
 

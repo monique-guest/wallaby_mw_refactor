@@ -132,7 +132,7 @@ Use the following command to run the pipeline. The only input parameter required
 your `config.ini` file.
 
 ```bash
-python -m flows.wallaby_mw --config path/to/config.ini
+python -m flows.wallaby_flow --config path/to/config.ini
 ```
 
 This will:
@@ -148,6 +148,37 @@ This will:
 5.  Stream live logs in your terminal
     
 6.  Display flow + task execution in the Prefect UI
+
+## 🐳 Building and Pushing Containers (Makefile)
+
+The repo includes a `Makefile` to simplify building, tagging, and pushing the stage containers.
+
+### Single image
+
+```powershell
+make casda
+make subfits
+make hi4pi
+make miriad
+```
+
+### Multiple images
+
+```powershell
+make casda hi4pi
+```
+
+### All images
+
+```powershell
+make all
+```
+
+### Override registry and tags
+
+```powershell
+make casda REGISTRY=images.canfar.net/yourproject DEV_TAG=dev PUSH_TAG=latest
+```
 
 ## 🧠 Directory Structure
 
@@ -181,4 +212,3 @@ wallaby_mw_refactor/
 ## 🚀 Testing the Pipeline Locally
 
 $${\color{red}INSERT \space INSTRUCTIONS}$$
-

@@ -20,7 +20,7 @@ from wallaby_mw.utils.config import (
 from wallaby_mw.utils.canfar import (
     start_session,
     submit_job,
-    poll_sessions,
+    live_logs,
 )
 
 # Function to parse arguments 
@@ -102,6 +102,8 @@ def _submit_task(
     )
 
     print(f"Launched session for [{section}]", session_id)
+    final_status = live_logs(session=session, session_id=session_id)
+    print(f"[{section}] step finished with final status: {final_status}")
 
     return session_id
 
@@ -190,8 +192,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = casda_task.submit(pipeline_cfg=config, sbid=sbid)
             casda_futures.append(fut)
 
-        casda_session_ids = [fut.result() for fut in casda_futures]
-        poll_sessions(casda_session_ids)
+        for fut in casda_futures:
+            fut.result()  # blocks until the task (i.e. Skaha job) is complete
     else:
         print(f"[casda] Skipped because config['casda']['run']={config['casda']['run']}.")
 
@@ -204,8 +206,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = subfits_task.submit(pipeline_cfg=config, sbid=sbid)
             subfits_futures.append(fut)
 
-        subfits_session_ids = [fut.result() for fut in subfits_futures]
-        poll_sessions(subfits_session_ids)
+        for fut in subfits_futures:
+            fut.result()
     else:
         print(f"[subfits] Skipped because config['subfits']['run']={config.get('subfits', 'run', fallback='True')}.")
 
@@ -218,8 +220,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = hi4pi_task.submit(pipeline_cfg=config, sbid=sbid)
             hi4pi_futures.append(fut)
         
-        hi4pi_session_ids = [fut.result() for fut in hi4pi_futures]
-        poll_sessions(hi4pi_session_ids)
+        for fut in hi4pi_futures:
+            fut.result()
     else:
         print(f"[hi4pi] Skipped because config['hi4pi']['run']={config.get('hi4pi', 'run', fallback='True')}.")
 
@@ -232,8 +234,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = miriad_script_task.submit(pipeline_cfg=config, sbid=sbid)
             miriad_script_futures.append(fut)
         
-        miriad_script_session_ids = [fut.result() for fut in miriad_script_futures]
-        poll_sessions(miriad_script_session_ids)
+        for fut in miriad_script_futures:
+            fut.result()
     else:
         print(f"[miriad_script] Skipped because config['miriad_script']['run']={config.get('miriad_script', 'run', fallback='True')}.")
 
@@ -246,8 +248,8 @@ def wallaby_flow(config_path: str) -> str:
             fut = miriad_task.submit(pipeline_cfg=config, sbid=sbid)
             miriad_futures.append(fut)
         
-        miriad_session_ids = [fut.result() for fut in miriad_futures]
-        poll_sessions(miriad_session_ids)
+        for fut in miriad_futures:
+            fut.result()
     else:
         print(f"[miriad] Skipped because config['miriad']['run']={config.get('miriad', 'run', fallback='True')}.")
 
