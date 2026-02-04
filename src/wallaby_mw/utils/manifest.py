@@ -43,3 +43,29 @@ def manifest_checksum_ok(manifest: Dict[str, Any], stage: str, filename: str) ->
         if entry.get("filename") == filename and entry.get("ok") is True:
             return True
     return False
+
+
+def upsert_stage_manifest(
+    path: str,
+    stage: str,
+    stage_manifest: Dict[str, Any],
+    *,
+    sbid: int | None = None,
+    obs_id: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Load (or create) a manifest, update a stage entry, and write it back.
+    Returns the updated manifest.
+    """
+    manifest = load_manifest(path) or {}
+    if sbid is not None:
+        manifest.setdefault("sbid", int(sbid))
+    if obs_id is not None:
+        manifest.setdefault("obs_id", obs_id)
+
+    manifest["updated_utc"] = utc_now_iso()
+    stages = manifest.setdefault("stages", {})
+    stages[stage] = stage_manifest
+
+    write_manifest(path, manifest)
+    return manifest

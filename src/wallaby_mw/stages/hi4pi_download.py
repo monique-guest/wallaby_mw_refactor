@@ -16,6 +16,7 @@ from astroquery.vizier import Vizier
 
 from wallaby_mw.utils.astro import get_centre_from_header
 from wallaby_mw.utils.logging import setup_logging
+from wallaby_mw.utils.manifest import upsert_stage_manifest, utc_now_iso
 from astropy.wcs import FITSFixedWarning
 
 logger = logging.getLogger(__name__)
@@ -293,6 +294,7 @@ def run(
     casda_dir = sbid_dir / "casda"
     hi4pi_dir = sbid_dir / "hi4pi"
     hi4pi_dir.mkdir(parents=True, exist_ok=True)
+    sbid_manifest_path = sbid_dir / "manifest.json"
 
     input_image = casda_dir / "cube.fits"
     if not input_image.exists():
@@ -301,6 +303,38 @@ def run(
     output_image = hi4pi_dir / "hi4pi.fits"
     if output_image.exists():
         logger.info("HI4PI image %s already exists. Skipping.", output_image)
+        stage_manifest = {
+            "stage": "hi4pi_download",
+            "started_utc": utc_now_iso(),
+            "sbid": int(sbid),
+            "inputs": {
+                "casda_cube": str(input_image),
+            },
+            "parameters": {
+                "width_deg": width,
+                "url": url,
+                "catalog": catalog,
+                "vizier_server": vizier_server,
+                "insecure": insecure,
+                "query_timeout_s": query_timeout_s,
+                "query_retries": query_retries,
+                "query_retry_wait_s": query_retry_wait_s,
+                "download_timeout_s": download_timeout_s,
+                "download_retries": download_retries,
+                "download_retry_wait_s": download_retry_wait_s,
+            },
+            "outputs": {
+                "hi4pi_dir": str(hi4pi_dir),
+                "hi4pi_fits": str(output_image),
+            },
+            "status": "skipped_exists",
+        }
+        upsert_stage_manifest(
+            str(sbid_manifest_path),
+            "hi4pi_download",
+            stage_manifest,
+            sbid=int(sbid),
+        )
         return
 
     logger.debug("Opening %s to read header.", input_image)
@@ -322,6 +356,38 @@ def run(
         download_timeout_s=download_timeout_s,
         download_retries=download_retries,
         download_retry_wait_s=download_retry_wait_s,
+    )
+    stage_manifest = {
+        "stage": "hi4pi_download",
+        "started_utc": utc_now_iso(),
+        "sbid": int(sbid),
+        "inputs": {
+            "casda_cube": str(input_image),
+        },
+        "parameters": {
+            "width_deg": width,
+            "url": url,
+            "catalog": catalog,
+            "vizier_server": vizier_server,
+            "insecure": insecure,
+            "query_timeout_s": query_timeout_s,
+            "query_retries": query_retries,
+            "query_retry_wait_s": query_retry_wait_s,
+            "download_timeout_s": download_timeout_s,
+            "download_retries": download_retries,
+            "download_retry_wait_s": download_retry_wait_s,
+        },
+        "outputs": {
+            "hi4pi_dir": str(hi4pi_dir),
+            "hi4pi_fits": str(output_image),
+        },
+        "status": "completed",
+    }
+    upsert_stage_manifest(
+        str(sbid_manifest_path),
+        "hi4pi_download",
+        stage_manifest,
+        sbid=int(sbid),
     )
     logger.info("HI4PI download stage complete for SBID %s.", sbid)
 
