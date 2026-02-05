@@ -16,7 +16,8 @@ dependencies = [
   "prefect>=3,<4",
   "canfar",
   "wget",
-  "tqdm"
+  "tqdm",
+  "paramiko"
 ]
 
 [project.scripts]

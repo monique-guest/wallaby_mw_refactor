@@ -31,3 +31,9 @@ def export_env_from_creds(creds: configparser.ConfigParser) -> None:
     # CANFAR cert path
     if "CANFAR" in creds and "cadc_loc" in creds["CANFAR"]:
         os.environ["CADC_CERT"] = creds["CANFAR"]["cadc_loc"]
+
+    # Setonix SSH credentials
+    if "Setonix" in creds and "key" in creds["Setonix"]:
+        os.environ["SSH_KEY"] = creds["Setonix"]["key"]
+        if "passphrase" in creds["Setonix"]:
+            os.environ["SSH_PASSPHRASE"] = creds["Setonix"]["passphrase"]

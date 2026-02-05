@@ -209,3 +209,7 @@ __marimo__/
 # Credentials
 configs/credentials.ini
 configs/config.ini
+
+# Scripts
+scripts/*.log
+scripts/__pycache__/
