@@ -229,10 +229,12 @@ def run(
 
         # Check if files from URLs already exist before downloading 
         urls_to_download = []
+        url_by_filename = {}
 
         for url in url_list:
             filename = filename_from_url(url)
             local_path = os.path.join(casda_dir, filename) 
+            url_by_filename[filename] = url
 
             if os.path.exists(local_path):
                 logging.info(f"File already exists, skipping: {filename}")
@@ -343,9 +345,57 @@ def run(
             })
 
             if not ok:
-                raise CasdaError(
-                    f"Checksum mismatch for {file}: expected {expected}, got {actual}"
+                logging.warning(
+                    "Checksum mismatch for %s: expected %s, got %s; re-downloading",
+                    file,
+                    expected,
+                    actual,
                 )
+                url = url_by_filename.get(file)
+                if not url:
+                    raise CasdaError(
+                        f"Checksum mismatch for {file} but no download URL found."
+                    )
+
+                redownload_attempts = download_retries + 1
+                redownload_ok = False
+                for attempt in range(1, redownload_attempts + 1):
+                    try:
+                        if os.path.exists(data_path):
+                            os.remove(data_path)
+                        casda.download_files([url], savedir=casda_dir)
+                        actual = md5sum(data_path)
+                        redownload_ok = (actual == expected)
+                        stage_manifest["checksums"].append({
+                            "filename": file,
+                            "data_path": data_path,
+                            "checksum_path": checksum_path,
+                            "expected_md5": expected,
+                            "actual_md5": actual,
+                            "ok": redownload_ok,
+                            "note": "redownload_after_checksum_mismatch",
+                            "attempt": attempt,
+                        })
+                        if redownload_ok:
+                            break
+                    except Exception as e:
+                        if attempt >= redownload_attempts:
+                            raise CasdaError(
+                                f"Redownload failed for {file}: {e}"
+                            ) from e
+                        logging.warning(
+                            "Redownload failed (attempt %d/%d) for %s: %s",
+                            attempt,
+                            redownload_attempts,
+                            file,
+                            e,
+                        )
+                        time.sleep(download_retry_wait_s)
+
+                if not redownload_ok:
+                    raise CasdaError(
+                        f"Checksum mismatch for {file} after redownload attempts"
+                    )
 
             logging.info("Checksum OK for file: %s", file)
 

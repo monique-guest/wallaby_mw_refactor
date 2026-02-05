@@ -203,9 +203,15 @@ def download_hi4pi(
 
     session = make_session(insecure=insecure)
 
+    download_meta = {}
     for row in sin_res:
         filename = row["FileName"]
         download_url = f"{url.rstrip('/')}/{filename}"
+        download_meta = {
+            "filename": filename,
+            "download_url": download_url,
+            "output_path": str(output_file),
+        }
         logger.info("Downloading HI4PI image %s", download_url)
 
         logger.debug(
@@ -271,6 +277,8 @@ def download_hi4pi(
         logger.info("Successfully downloaded to %s (%.2f MB)",
                     output_file, output_file.stat().st_size / 1024**2)
 
+    return download_meta
+
 
 def run(
     rootdir: Path,
@@ -288,7 +296,7 @@ def run(
     download_retry_wait_s: int,
 ):
     logger.debug("run() called with: rootdir=%s, sbid=%s, width=%s, url=%s, catalog=%s, vizier_server=%s, insecure=%s",
-                 rootdir, sbid, width, url, catalog, vizier_server, insecure)
+                rootdir, sbid, width, url, catalog, vizier_server, insecure)
 
     sbid_dir = rootdir / sbid
     casda_dir = sbid_dir / "casda"
@@ -301,6 +309,14 @@ def run(
         raise FileNotFoundError(f"Input cube not found for SBID {sbid}: {input_image}")
 
     output_image = hi4pi_dir / "hi4pi.fits"
+
+    logger.debug("Opening %s to read header.", input_image)
+    with fits.open(input_image) as hdul:
+        header = hdul[0].header
+
+    centre = get_centre_from_header(header)
+    logger.info("Centre coordinate for SBID %s: %s", sbid, centre)
+
     if output_image.exists():
         logger.info("HI4PI image %s already exists. Skipping.", output_image)
         stage_manifest = {
@@ -323,6 +339,16 @@ def run(
                 "download_retries": download_retries,
                 "download_retry_wait_s": download_retry_wait_s,
             },
+            "derived": {
+                "centre_ra_deg": centre.ra.value,
+                "centre_dec_deg": centre.dec.value,
+            },
+            "download": {
+                "filename": output_image.name,
+                "download_url": None,
+                "output_path": str(output_image),
+                "note": "skipped_exists",
+            },
             "outputs": {
                 "hi4pi_dir": str(hi4pi_dir),
                 "hi4pi_fits": str(output_image),
@@ -337,14 +363,7 @@ def run(
         )
         return
 
-    logger.debug("Opening %s to read header.", input_image)
-    with fits.open(input_image) as hdul:
-        header = hdul[0].header
-
-    centre = get_centre_from_header(header)
-    logger.info("Centre coordinate for SBID %s: %s", sbid, centre)
-
-    download_hi4pi(
+    download_meta = download_hi4pi(
         centre.ra.value, centre.dec.value, width, output_image,
         url=url,
         catalog=catalog,
@@ -377,6 +396,11 @@ def run(
             "download_retries": download_retries,
             "download_retry_wait_s": download_retry_wait_s,
         },
+        "derived": {
+            "centre_ra_deg": centre.ra.value,
+            "centre_dec_deg": centre.dec.value,
+        },
+        "download": download_meta,
         "outputs": {
             "hi4pi_dir": str(hi4pi_dir),
             "hi4pi_fits": str(output_image),
