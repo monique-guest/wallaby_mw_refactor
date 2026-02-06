@@ -66,7 +66,6 @@ def submit_test_job() -> str:
             if hasattr(e, attr):
                 print(f"{attr}:", getattr(e, attr))
         raise
-    return session_ids[0]
 
 def get_session_by_id(session_obj, session_id):
     """Return a single session dict by ID using fetch()."""
