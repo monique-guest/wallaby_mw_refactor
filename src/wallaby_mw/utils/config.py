@@ -34,6 +34,13 @@ def export_env_from_creds(creds: configparser.ConfigParser) -> None:
 
     # Setonix SSH credentials
     if "Setonix" in creds and "key" in creds["Setonix"]:
-        os.environ["SSH_KEY"] = creds["Setonix"]["key"]
+        os.environ["SETONIX_USERNAME"] = creds["Setonix"]["username"]
+        os.environ["SSH_KEY"] = creds["Setonix"]["ssh_key"].strip()
+
         if "passphrase" in creds["Setonix"]:
-            os.environ["SSH_PASSPHRASE"] = creds["Setonix"]["passphrase"]
+            val = creds["Setonix"]["passphrase"].strip()
+            if val:
+                os.environ["SSH_PASSPHRASE"] = val
+            else:
+                # Explicitly ensure empty values do not linger
+                os.environ.pop("SSH_PASSPHRASE", None)

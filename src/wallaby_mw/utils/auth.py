@@ -1,7 +1,10 @@
 import logging
 import os
 import configparser
+import time
 from typing import Optional, Tuple
+
+import requests
 
 from wallaby_mw.utils.errors import CasdaAuthError
 
@@ -143,3 +146,36 @@ def ensure_casda_login(
 
     logging.info("CASDA login OK for %s", username)
     return casda, username
+
+
+def ensure_casda_login_with_retry(
+    retries: int = 3,
+    wait_s: int = 10,
+    username: str | None = None,
+    password: str | None = None,
+):
+    """
+    Retry CASDA login on transient network timeouts.
+    Returns (casda, username).
+    """
+    attempts = max(1, retries)
+    last_error = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return ensure_casda_login(username=username, password=password)
+        except requests.exceptions.ReadTimeout as e:
+            last_error = e
+            if attempt >= attempts:
+                break
+            logging.warning(
+                "CASDA login timed out (attempt %d/%d). Retrying in %ss...",
+                attempt,
+                attempts,
+                wait_s,
+            )
+            time.sleep(wait_s)
+
+    if last_error:
+        raise last_error
+    raise CasdaAuthError("CASDA login failed after retries.")

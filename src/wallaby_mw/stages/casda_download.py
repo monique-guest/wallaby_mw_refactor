@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from astroquery.utils.tap.core import TapPlus
-from wallaby_mw.utils.auth import ensure_casda_login
+from wallaby_mw.utils.auth import ensure_casda_login_with_retry
 from astropy.utils import iers
 from wallaby_mw.utils.files import filename_from_url, create_symlinks_from_patterns
 from wallaby_mw.utils.checksums import md5sum, read_checksum_file
@@ -14,8 +14,6 @@ import os
 import argparse
 
 iers.conf.auto_download = False
-
-socket.setdefaulttimeout(30)
 
 # Function to parse arguments 
 def parse_args(argv=None):
@@ -76,6 +74,27 @@ def parse_args(argv=None):
         default=10,
         help="Seconds to wait between download retries (default: 10).",
     )
+    parser.add_argument(
+        "--network-timeout",
+        type=int,
+        default=120,
+        help=(
+            "Socket read/connect timeout in seconds for CASDA network calls "
+            "(login, TAP, and file downloads). Default: 120."
+        ),
+    )
+    parser.add_argument(
+        "--login-retries",
+        type=int,
+        default=3,
+        help="Number of CASDA login attempts on timeout (default: 3).",
+    )
+    parser.add_argument(
+        "--login-retry-wait",
+        type=int,
+        default=10,
+        help="Seconds to wait between CASDA login retries (default: 10).",
+    )
 
     return parser.parse_args(argv)
 
@@ -94,12 +113,12 @@ def run(
     Run the CASDA download stage for a single SBID.
 
     All real work lives here so this can be called from:
-      - CLI (main)
-      - Prefect tasks
-      - tests
+        - CLI (main)
+        - Prefect tasks
+        - tests
     """
     if casda is None:
-        casda, username = ensure_casda_login()
+        casda, username = ensure_casda_login_with_retry()
     else:
         logging.info("Using existing CASDA login for %s", username or "unknown-user")
 
@@ -458,9 +477,14 @@ def main(argv=None):
         raise SystemExit("--rootdir is required")
 
     setup_logging(args.log_level)
+    socket.setdefaulttimeout(args.network_timeout)
+    logging.info("CASDA network timeout set to %ss", args.network_timeout)
 
     # CASDA auth once for all SBIDs
-    casda, username = ensure_casda_login()
+    casda, username = ensure_casda_login_with_retry(
+        retries=args.login_retries,
+        wait_s=args.login_retry_wait,
+    )
 
     try:
         for sbid in args.sbids:

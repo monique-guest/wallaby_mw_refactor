@@ -182,15 +182,29 @@ def live_logs(
         session: Session,
         session_id: str,
         ):
-        info_list = session.info(ids=session_id)
-        info = info_list[0]
+        try:
+            info_list = session.info(ids=session_id) or []
+        except Exception as e:
+            # Control-plane hiccup; caller will retry.
+            raise RuntimeError(f"status fetch failed: {e}") from e
+
+        if not info_list:
+            # Treat empty response as transient.
+            raise RuntimeError("status fetch returned empty info_list")
+
+        info = info_list[0] or {}
         status = info.get("status", "unknown")
         return status
 
     while True:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         elapsed = format_elapsed(time.time() - start_time)
-        status = get_status(session, session_id)
+        try:
+            status = get_status(session, session_id)
+        except Exception as e:
+            print(f"[{now} | elapsed {elapsed}] status fetch failed, retrying: {e}")
+            time.sleep(poll_interval)
+            continue
         elapsed_seconds = time.time() - start_time
 
         try:
@@ -267,8 +281,13 @@ def poll_sessions(
         return f"{h:02d}:{m:02d}:{s:02d}"
 
     def get_status(session: Session, session_id: str) -> str:
-        info_list = session.info(ids=session_id)
-        info = info_list[0] if info_list else {}
+        try:
+            info_list = session.info(ids=session_id) or []
+        except Exception as e:
+            raise RuntimeError(f"status fetch failed: {e}") from e
+        if not info_list:
+            raise RuntimeError("status fetch returned empty info_list")
+        info = info_list[0] or {}
         return info.get("status", "unknown")
 
     final_statuses: Dict[str, str] = {}
@@ -278,7 +297,12 @@ def poll_sessions(
         for session_id in session_ids:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             elapsed = format_elapsed(time.time() - state[session_id]["start_time"])
-            status = get_status(session, session_id)
+            try:
+                status = get_status(session, session_id)
+            except Exception as e:
+                print(f"[{now} | elapsed {elapsed}] status fetch failed for {session_id}, retrying: {e}")
+                all_terminal = False
+                continue
 
             try:
                 logs_dict = session.logs(ids=session_id) or {}

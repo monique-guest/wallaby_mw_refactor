@@ -34,6 +34,20 @@ The first stage of the pipeline:
 
 This stage is triggered via Prefect by the `_run_casda()` wrapper in `flows/wallaby_mw.py`. 
 
+### `run_linmos.py`
+
+Test job - git bash and filepath issue
+
+```bash
+python -m wallaby_mw.stages.run_linmos   --rootdir /scratch/ja3/mguest/wallaby_mw/pipeline/outputs   --sbid-groups "[66866 67022]"   --submit-test-job   --testdir "//scratch//ja3//mguest//wallaby_mw//pipeline//outputs//paramiko"
+```
+
+#### Windows / Git Bash users
+When passing POSIX paths (e.g. /scratch/...) to remote jobs,
+disable MSYS path conversion:
+
+    MSYS2_ARG_CONV_EXCL="*" python -m wallaby_mw.stages.run_linmos ...
+
 <details>
   <summary>Outputs</summary> 
 

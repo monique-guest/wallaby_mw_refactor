@@ -15,6 +15,10 @@ class SetonixConnection:
     port: int = 22
     timeout_s: int = 30
 
+    def __post_init__(self):
+        if self.passphrase is not None:
+            object.__setattr__(self, "passphrase", self.passphrase.strip() or None)
+
 
 class SetonixError(RuntimeError):
     pass
@@ -73,3 +77,25 @@ def check_slurm_access(conn: SetonixConnection) -> dict[str, str]:
         info["sacct_head"] = f"(sacct unavailable: {e})"
 
     return info
+
+def submit_sbatch_inline(
+    conn: SetonixConnection,
+    script_text: str,
+) -> str:
+    """
+    Submit a Slurm job using an inline script.
+    Returns the Slurm job ID as a string.
+    """
+    # Use --parsable so sbatch prints just the jobid
+    cmd = (
+        "sbatch --parsable <<'EOF'\n"
+        f"{script_text}\n"
+        "EOF"
+    )
+
+    out = run_remote(conn, cmd).strip()
+
+    if not out.isdigit():
+        raise SetonixError(f"Unexpected sbatch output: {out}")
+
+    return out
