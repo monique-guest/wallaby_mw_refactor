@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import os
+import logging
 
 from typing import Any, Dict, List, Mapping, Sequence
 from datetime import datetime
@@ -11,7 +12,7 @@ from canfar.images import Images
 from canfar.models.registry import ContainerRegistry
 from canfar.models.config import Configuration
 
-def start_session(timeout: int = 180) -> Session:
+def start_session(timeout: int = 180, loglevel: str | None = None) -> Session:
     """Build a Session using Harbor creds from env vars."""
     user = os.environ.get("CANFAR_REGISTRY_USERNAME")
     secret = os.environ.get("CANFAR_REGISTRY_SECRET")
@@ -24,7 +25,14 @@ def start_session(timeout: int = 180) -> Session:
     cfg = Configuration(
         registry=ContainerRegistry(username=user, secret=secret)
     )
-    return Session(timeout=timeout, config=cfg)
+
+    effective_loglevel = (loglevel or os.environ.get("CANFAR_LOG_LEVEL", "WARNING")).upper()
+    level = getattr(logging, effective_loglevel, logging.WARNING)
+    logging.getLogger("canfar").setLevel(level)
+    logging.getLogger("httpx").setLevel(level)
+    logging.getLogger("httpcore").setLevel(level)
+
+    return Session(timeout=timeout, config=cfg, loglevel=effective_loglevel)
 
 def list_container_images() -> list[dict]:
     images_client = Images()

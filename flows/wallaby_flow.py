@@ -68,6 +68,7 @@ def _submit_task(
     stage = pipeline_cfg[section]
 
     timeout = stage.getint("timeout", fallback=120)
+    canfar_log_level = pipeline_cfg.get("pipeline", "canfar_log_level", fallback="WARNING")
     image = stage["image"]
     cmd = stage.get("cmd", "python")
 
@@ -88,7 +89,7 @@ def _submit_task(
 
     name = f"{section.replace('_', '-')}-{format_values.get('sbid', sbids).replace(' ', '-')}"
 
-    session = start_session(timeout=timeout)
+    session = start_session(timeout=timeout, loglevel=canfar_log_level)
 
     session_id = submit_job(
         session=session,
