@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
+import shlex
 
 from wallaby_mw.utils.ssh import ssh_run, SSHError
 
@@ -22,6 +24,17 @@ class SetonixConnection:
 
 class SetonixError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class RemoteRepoStatus:
+    path: str
+    exists: bool
+    cloned: bool
+    head_commit: str
+    head_date: str
+    branch: str
+    remote_url: str
 
 
 def run_remote(conn: SetonixConnection, cmd: str) -> str:
@@ -46,6 +59,75 @@ def run_remote(conn: SetonixConnection, cmd: str) -> str:
         )
 
     return res.stdout
+
+
+def _shell_quote(value: str) -> str:
+    return shlex.quote(value)
+
+
+def ensure_remote_repo(
+    conn: SetonixConnection,
+    *,
+    repo_url: str,
+    repo_dir: str,
+    branch: Optional[str] = None,
+) -> RemoteRepoStatus:
+    """
+    Ensure a git repository exists on Setonix.
+
+    If ``repo_dir`` does not exist, clone ``repo_url`` there.
+    If it already exists, validate that it looks like a git repository and
+    report its current state without modifying it.
+    """
+    repo_dir_q = _shell_quote(repo_dir)
+    repo_url_q = _shell_quote(repo_url)
+    branch_arg = f"--branch {_shell_quote(branch)} " if branch else ""
+
+    exists_cmd = f"if [ -d {repo_dir_q} ]; then printf 'yes'; else printf 'no'; fi"
+    exists = run_remote(conn, exists_cmd).strip() == "yes"
+
+    cloned = False
+    if not exists:
+        parent_dir_q = _shell_quote(str(Path(repo_dir).parent).replace("\\", "/"))
+        clone_cmd = (
+            f"mkdir -p {parent_dir_q} && "
+            f"git clone {branch_arg}{repo_url_q} {repo_dir_q}"
+        )
+        run_remote(conn, clone_cmd)
+        cloned = True
+
+    inspect_cmd = (
+        f"cd {repo_dir_q} && "
+        "git rev-parse --is-inside-work-tree >/dev/null 2>&1 || "
+        "(echo 'Not a git repository' >&2; exit 2)\n"
+        "git remote get-url origin\n"
+        "git rev-parse --abbrev-ref HEAD\n"
+        "git rev-parse HEAD\n"
+        "git log -1 --format=%cI"
+    )
+
+    try:
+        out = run_remote(conn, inspect_cmd)
+    except (SetonixError, SSHError) as e:
+        raise SetonixError(f"Failed to inspect remote repo at {repo_dir}: {e}") from e
+
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    if len(lines) < 4:
+        raise SetonixError(
+            f"Unexpected git inspection output for remote repo at {repo_dir}: {out!r}"
+        )
+
+    remote_url_actual, branch_name, head_commit, head_date = lines[:4]
+
+    return RemoteRepoStatus(
+        path=repo_dir,
+        exists=True,
+        cloned=cloned,
+        head_commit=head_commit,
+        head_date=head_date,
+        branch=branch_name,
+        remote_url=remote_url_actual,
+    )
 
 
 def check_slurm_access(conn: SetonixConnection) -> dict[str, str]:
