@@ -6,7 +6,7 @@ from typing import Optional
 from wallaby_mw.utils.ssh import ssh_run, SSHError
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True) # Make instances of the class immutable after creation
 class SetonixConnection:
     host: str
     user: str

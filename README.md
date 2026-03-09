@@ -85,6 +85,12 @@ secret = secret
 
 [CANFAR]
 cadc_cert = path\to\.ssl\cadcproxy.pem 
+
+[Setonix]
+host = setonix.pawsey.org.au
+username = username
+ssh_key = ~/path/to/.ssh/key.pem
+passphrase = passphrase
 ```
 
 ### 6. Create the `config.ini` file 
@@ -96,16 +102,61 @@ Example `config.ini`
 
 ```ini 
 [pipeline]
-credentials = path\to\credentials.ini
+credentials = path\to\wallaby_mw\configs\credentials.ini
 sbids = 67022 66866
 rootdir = /arc/projects/WALLABY_test/mw/mw_pipeline_outputs
+canfar_log_level = WARNING
 
 [casda]
+run = False
+timeout = 300
 image = images.canfar.net/srcnet/wallaby-mw-casda
+logging = INFO
 cmd = python
-args = -m wallaby_mw casda-download --sbids {sbids} --rootdir {rootdir}
+args = -m wallaby_mw casda-download --sbids {sbids} --rootdir {rootdir} --log-level {logging}
 cores = 2
 ram = 8
+
+[subfits]
+run = True
+timeout = 300
+image = images.canfar.net/srcnet/wallaby-mw-subfits:latest
+cmd = python
+args = -m wallaby_mw apply-subfits --sbid {sbid} --rootdir {rootdir}
+cores = 4
+ram = 32
+
+[hi4pi]
+run = True
+timeout = 300
+image = images.canfar.net/srcnet/wallaby-mw-hi4pi:latest
+logging = INFO
+url = https://cdsarc.u-strasbg.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/
+catalog = J/A+A/594/A116/cubes_eq
+vizier_query_width = 20.0
+cmd = python
+args = -m wallaby_mw hi4pi-download --rootdir {rootdir} --sbid {sbid} --width {vizier_query_width} --url {url} --catalog {catalog} --log-level {logging} --insecure
+cores = 1
+ram = 4
+
+[miriad_script]
+run = True
+timeout = 300
+image = images.canfar.net/srcnet/wallaby-mw-miriad-script:latest
+imsub_region = 630,630,3960,3940
+cmd = python
+args = -m wallaby_mw miriad-script --rootdir {rootdir} --sbid {sbid} --imsub_region {imsub_region}
+cores = 1
+ram = 4
+
+[miriad]
+run = True
+timeout = 300
+image = images.canfar.net/srcnet/miriad:dev
+cmd = /bin/csh
+args = {rootdir}/{sbid}/miriad_script/miriad_script.sh
+cores = 4
+ram = 32
 ```
 
 The only parameters that should require updating are those in the `[pipeline]` section. The pipeline 
@@ -132,7 +183,7 @@ Use the following command to run the pipeline. The only input parameter required
 your `config.ini` file.
 
 ```bash
-python -m flows.wallaby_flow --config path/to/config.ini
+python -m flows.wallaby_flow --config configs/config.ini
 ```
 
 This will:
