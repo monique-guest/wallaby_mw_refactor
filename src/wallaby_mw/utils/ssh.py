@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+import time
 
 import paramiko
 
@@ -60,6 +61,7 @@ def ssh_run(
     passphrase: Optional[str] = None,
     port: int = 22,
     timeout_s: int = 30,
+    stream: bool = False,
 ) -> SSHResult:
     """
     Run a command on a remote host via Paramiko SSH.
@@ -111,10 +113,47 @@ def ssh_run(
         )
 
         stdin, stdout, stderr = client.exec_command(cmd)
-        rc = stdout.channel.recv_exit_status()
 
-        out = stdout.read().decode("utf-8", errors="replace")
-        err = stderr.read().decode("utf-8", errors="replace")
+        if stream:
+            out_chunks: list[str] = []
+            err_chunks: list[str] = []
+            channel = stdout.channel
+
+            while True:
+                if channel.recv_ready():
+                    chunk = channel.recv(4096).decode("utf-8", errors="replace")
+                    if chunk:
+                        print(chunk, end="", flush=True)
+                        out_chunks.append(chunk)
+
+                if channel.recv_stderr_ready():
+                    chunk = channel.recv_stderr(4096).decode("utf-8", errors="replace")
+                    if chunk:
+                        print(chunk, end="", flush=True)
+                        err_chunks.append(chunk)
+
+                if channel.exit_status_ready():
+                    while channel.recv_ready():
+                        chunk = channel.recv(4096).decode("utf-8", errors="replace")
+                        if chunk:
+                            print(chunk, end="", flush=True)
+                            out_chunks.append(chunk)
+                    while channel.recv_stderr_ready():
+                        chunk = channel.recv_stderr(4096).decode("utf-8", errors="replace")
+                        if chunk:
+                            print(chunk, end="", flush=True)
+                            err_chunks.append(chunk)
+                    break
+
+                time.sleep(0.1)
+
+            rc = channel.recv_exit_status()
+            out = "".join(out_chunks)
+            err = "".join(err_chunks)
+        else:
+            rc = stdout.channel.recv_exit_status()
+            out = stdout.read().decode("utf-8", errors="replace")
+            err = stderr.read().decode("utf-8", errors="replace")
 
         return SSHResult(
             returncode=rc,
